@@ -1,12 +1,10 @@
 // Bundled offline catalog: Pokemon Base Set (singles + sealed).
 // productIds/groupIds are SYNTHETIC (stable, but not real TCGplayer ids) -
-// offline mode is for demos and development only. Other games appear in the
-// games list but sync their catalogs only in live mode.
+// offline mode is for demos and development only.
+// MVP scope is Pokemon only - other games return post-MVP.
 import type { ApiExpansion, ApiGame, ApiProduct } from "../types";
 
 export const FIXTURE_GAMES: ApiGame[] = [
-  { categoryId: 1, name: "Magic", displayName: "Magic: The Gathering" },
-  { categoryId: 2, name: "YuGiOh", displayName: "Yu-Gi-Oh!" },
   { categoryId: 3, name: "Pokemon", displayName: "Pokemon" },
 ];
 

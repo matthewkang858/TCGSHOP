@@ -4,13 +4,14 @@
  *  - fixture catalog (Pokemon Base Set - singles + sealed)
  *  - ~50 inventory lines: singles across conditions + 8 sealed w/ cost basis
  *  - 2 reprice rules (singles peg / sealed margin-guarded)
- *  - 3 alerts (pct_change 7d>=20%, buylist_arb 85%, restock on a booster box)
+ *  - 3 alerts (pct_change 7d>=20%, Charizard threshold watch, restock on a booster box)
  *  - 30 days of price snapshots + sales stats, then one alert-eval pass so
  *    the dashboard, charts, and alert feed demo instantly
  */
-import { eq, inArray, sql } from "drizzle-orm";
+import { eq, inArray, notInArray, sql } from "drizzle-orm";
 import { db, pool } from "./index";
 import {
+  alertEvents,
   alerts,
   expansions,
   games,
@@ -20,6 +21,7 @@ import {
   products,
   repriceRules,
   salesStats,
+  skus,
   stores,
   users,
   watchlistItems,
@@ -38,7 +40,34 @@ const DAY = 86_400_000;
 const DEMO_EMAIL = "demo@countertop.local";
 const DEMO_STORE = "Countertop Demo Store";
 
+/**
+ * Remove catalog rows outside the MVP game set (e.g. the MTG demo data from
+ * earlier versions), including everything hanging off them.
+ */
+async function pruneOutOfScopeCatalog() {
+  const keepCats = FIXTURE_GAMES.map((g) => g.categoryId);
+  const stale = await db
+    .select({ productId: products.productId })
+    .from(products)
+    .where(notInArray(products.categoryId, keepCats));
+  if (stale.length === 0) return;
+
+  const ids = stale.map((s) => s.productId);
+  await db.delete(alertEvents).where(inArray(alertEvents.productId, ids));
+  await db.delete(watchlistItems).where(inArray(watchlistItems.productId, ids));
+  await db.delete(priceSnapshots).where(inArray(priceSnapshots.productId, ids));
+  await db.delete(salesStats).where(inArray(salesStats.productId, ids));
+  // inventory delete cascades any reprice_run_items pointing at it
+  await db.delete(inventoryItems).where(inArray(inventoryItems.productId, ids));
+  await db.delete(skus).where(inArray(skus.productId, ids));
+  await db.delete(products).where(inArray(products.productId, ids));
+  await db.delete(expansions).where(notInArray(expansions.categoryId, keepCats));
+  await db.delete(games).where(notInArray(games.categoryId, keepCats));
+  console.log(`✓ pruned ${ids.length} out-of-scope catalog products (non-Pokemon)`);
+}
+
 async function seedCatalog() {
+  await pruneOutOfScopeCatalog();
   await db
     .insert(games)
     .values(
@@ -244,9 +273,14 @@ async function main() {
     },
     {
       storeId: store.id,
-      name: "Buylist arbitrage (CK ≥ 85% of market)",
-      type: "buylist_arb",
-      config: { spread_pct: 85 },
+      name: "Charizard price watch",
+      type: "threshold_cross",
+      config: {
+        product_id: 42304, // Base Set Charizard
+        direction: "above",
+        threshold:
+          Math.ceil((fixturePrice(42304, "tcgplayer", "retail") * 1.1) / 10) * 10,
+      },
       cooldownHours: 24,
     },
     {
@@ -261,7 +295,7 @@ async function main() {
       cooldownHours: 24,
     },
   ]);
-  console.log("✓ alerts: pct_change 7d, buylist_arb 85%, restock_velocity");
+  console.log("✓ alerts: pct_change 7d, Charizard threshold watch, restock_velocity");
 
   // --- 30 days of price snapshots -------------------------------------------------
   const allSeededProducts = [

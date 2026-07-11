@@ -83,10 +83,23 @@ Tier gating degrades gracefully:
   URLs; anything without one falls back to generated card-style SVG
   placeholders (`/api/placeholder/[productId]`), so offline mode still looks
   like a card catalog.
-- **Card Kingdom is Magic-only**: buylist sweeps, the CK buylist price card,
-  and `ck_buylist` / `buylist_arb` features are restricted to categoryId 1 —
-  CK doesn't buy other games, so showing a Pokemon "CK buylist" would be
-  fiction. Non-Magic product pages show a 30-day market range instead.
+- **MVP scope is Pokemon Base Set only.** Catalog sync filters to Pokemon
+  (`MVP_CATEGORY_IDS` in `src/jobs/catalog-sync.ts` — widen when other games
+  ship); the fixture catalog is Base Set singles + sealed. The pipeline
+  itself is game-agnostic.
+- **Card Kingdom is Magic-only**, so the `ck_buylist` basis and the
+  `buylist_arb` alert are hidden from the UI while the MVP is Pokemon-only.
+  The engine support, sweeps gating (categoryId 1), and tests remain in
+  place for when Magic ships. Product pages show a 30-day market range card.
+- **Image strategy**: hotlink, don't mirror. Live-synced products use the
+  provider's image URLs; the demo's Base Set singles hotlink the public
+  pokemontcg.io scans; anything else gets generated placeholder art. Planned
+  v2: cache-on-demand — first view downloads the image once into object
+  storage (e.g. R2) and serves our copy thereafter, so we only ever host
+  images stores actually look at and self-heal if upstream URLs change. Bulk
+  pre-mirroring the whole catalog (~25–50 GB) is deliberately avoided:
+  storage is cheap but the crawl, egress, and licensing exposure aren't
+  worth it for the MVP.
 
 ### Background jobs (pg-boss, `pnpm worker`)
 

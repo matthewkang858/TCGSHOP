@@ -24,10 +24,8 @@ const TYPE_INFO: Record<string, { label: string; hint: string }> = {
     label: "Sales velocity",
     hint: "Fires when a watchlist product sells at least N copies in 24h.",
   },
-  buylist_arb: {
-    label: "Buylist arbitrage",
-    hint: "Fires when Card Kingdom's buylist reaches X% of TCG market — a sell-to-buylist spread signal. Magic only (Card Kingdom doesn't buy other games).",
-  },
+  // buylist_arb (CK buylist spread) is hidden while the MVP is Pokemon-only -
+  // Card Kingdom buys Magic exclusively. The evaluator stays tested & ready.
   restock_velocity: {
     label: "Restock signal",
     hint: "Fires when your stock is at/below N while the market sold at least M in 24h. Built for the sealed wall.",
@@ -157,7 +155,6 @@ export function AlertForm() {
         threshold_cross: ["product_id", "direction", "threshold"],
         pct_change: ["pct", "window", "scope"],
         velocity: ["product_id", "min_sales_24h"],
-        buylist_arb: ["spread_pct"],
         restock_velocity: ["product_id", "max_quantity", "min_market_sales_24h"],
       };
       for (const key of Object.keys(payload)) {
@@ -290,19 +287,6 @@ export function AlertForm() {
                   min="1"
                   value={fields.min_sales_24h ?? ""}
                   onChange={(e) => set("min_sales_24h", e.target.value)}
-                  required
-                />
-              </div>
-            ) : null}
-
-            {type === "buylist_arb" ? (
-              <div className="space-y-1">
-                <Label>Buylist ≥ (% of market)</Label>
-                <Input
-                  type="number"
-                  min="1"
-                  value={fields.spread_pct ?? ""}
-                  onChange={(e) => set("spread_pct", e.target.value)}
                   required
                 />
               </div>

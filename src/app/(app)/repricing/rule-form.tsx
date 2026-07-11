@@ -17,11 +17,12 @@ const CONDITIONS = [
   "Unopened",
 ];
 
+// ck_buylist stays in the schema/engine but is hidden while the MVP is
+// Pokemon-only (Card Kingdom buys Magic exclusively)
 const BASIS_OPTIONS: { value: Rule["basis"]; label: string; hint?: string }[] = [
   { value: "tcg_market", label: "TCG Market (default)" },
   { value: "tcg_low", label: "TCG Low", hint: "lowest current listing" },
   { value: "sales_median_7d", label: "7-day sales median" },
-  { value: "ck_buylist", label: "Card Kingdom buylist (Magic only)", hint: "for buy-price rules" },
   { value: "cardmarket_trend", label: "Cardmarket trend (P1 - EU)", hint: "stub" },
 ];
 

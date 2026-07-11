@@ -8,11 +8,17 @@ import type { CatalogRow } from "@/lib/tcgapis/types";
 import { withJobRun } from "./job-run";
 
 export const catalogSyncInput = z.object({
-  /** sync a single game; omit to sync every game already in the games table */
+  /** sync a single game; omit to sync the MVP game set */
   categoryId: z.number().int().positive().optional(),
 });
 
 const UPSERT_CHUNK = 500;
+
+/**
+ * MVP scope: Pokemon only. Widen this list (or drop the filter) when other
+ * games ship - the pipeline itself is game-agnostic.
+ */
+const MVP_CATEGORY_IDS = [3];
 
 /**
  * catalog-sync: upsert games -> expansions -> products for a game,
@@ -24,7 +30,10 @@ export async function runCatalogSync(rawInput: unknown): Promise<void> {
   await withJobRun("catalog-sync", async (stats) => {
     const client = await getTcgApisClient();
 
-    const apiGames = await client.listGames();
+    // MVP: only in-scope games enter the local catalog (and its UI dropdowns)
+    const apiGames = (await client.listGames()).filter((g) =>
+      MVP_CATEGORY_IDS.includes(g.categoryId)
+    );
     stats.games = apiGames.length;
     if (apiGames.length > 0) {
       await db
@@ -49,7 +58,9 @@ export async function runCatalogSync(rawInput: unknown): Promise<void> {
       ? apiGames.filter((g) => g.categoryId === input.categoryId)
       : apiGames;
     if (input.categoryId && targets.length === 0) {
-      throw new Error(`Unknown categoryId ${input.categoryId}`);
+      throw new Error(
+        `categoryId ${input.categoryId} is not in the MVP game set (${MVP_CATEGORY_IDS.join(", ")})`
+      );
     }
 
     let productCount = 0;
