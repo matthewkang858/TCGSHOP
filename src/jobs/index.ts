@@ -2,6 +2,7 @@ import { getBoss } from "./boss";
 import { JOB } from "./names";
 import { runCatalogSync } from "./catalog-sync";
 import { registerSweepJobs } from "./price-sweep";
+import { registerAlertJobs } from "./alert-eval";
 
 /**
  * Register all job handlers + cron schedules on the worker process.
@@ -22,6 +23,7 @@ export async function registerJobs() {
   await boss.schedule(JOB.CATALOG_SYNC, "0 3 * * 1", {}, {});
 
   await registerSweepJobs(boss);
+  await registerAlertJobs(boss);
 
   console.log("[worker] job handlers registered");
 }
