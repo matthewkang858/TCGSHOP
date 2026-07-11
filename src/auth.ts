@@ -23,6 +23,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     verificationTokensTable: verificationTokens,
   }),
   secret: env.AUTH_SECRET,
+  // self-hosted app: the operator controls APP_URL / the reverse proxy
+  trustHost: true,
   session: { strategy: "database" },
   pages: {
     signIn: "/login",

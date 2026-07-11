@@ -110,11 +110,14 @@ export function fixturePrice(
     if (daysAgo <= 5) spike = 1.3;
   }
 
-  let price = base * drift * spike * (PROVIDER_FACTOR[provider] ?? 1);
-
+  let price: number;
   if (listing === "buylist") {
+    // buylist is a ratio of the *tcgplayer market* price (55-95%), so arb
+    // alerts see a realistic spread that sometimes crosses 85%
     const ratio = 0.55 + rand01(productId, 3) * 0.4;
-    price = price * ratio;
+    price = base * drift * spike * ratio;
+  } else {
+    price = base * drift * spike * (PROVIDER_FACTOR[provider] ?? 1);
   }
 
   return Math.max(0.01, Math.round(price * 100) / 100);
