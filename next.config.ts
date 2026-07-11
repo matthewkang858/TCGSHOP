@@ -6,6 +6,8 @@ const nextConfig: NextConfig = {
       // TCGplayer product images served via TCGAPIs catalog data
       { protocol: "https", hostname: "product-images.tcgplayer.com" },
       { protocol: "https", hostname: "tcgplayer-cdn.tcgplayer.com" },
+      // real Base Set card scans used by the offline demo catalog
+      { protocol: "https", hostname: "images.pokemontcg.io" },
     ],
   },
   serverExternalPackages: ["pg-boss", "pg"],

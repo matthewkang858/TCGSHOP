@@ -146,6 +146,16 @@ function cleanName(name: string) {
   return name.replace(/[^a-zA-Z0-9 ]/g, "").replace(/\s+/g, " ").trim();
 }
 
+/**
+ * Real Base Set card scans from the free pokemontcg.io image CDN, addressed
+ * by collector number ("4/102" -> base1/4.png). Demo/dev convenience only -
+ * live catalog syncs use the provider's own image URLs.
+ */
+function baseSetImage(number: string): string | null {
+  const n = Number.parseInt(number, 10);
+  return Number.isInteger(n) && n > 0 ? `https://images.pokemontcg.io/base1/${n}.png` : null;
+}
+
 function buildProducts(): (ApiProduct & { groupId: number })[] {
   const products: (ApiProduct & { groupId: number })[] = [];
 
@@ -157,7 +167,7 @@ function buildProducts(): (ApiProduct & { groupId: number })[] {
       cleanName: cleanName(name),
       number,
       rarity,
-      image: null,
+      image: baseSetImage(number),
     });
   });
   BASE_SET_SEALED.forEach((name, i) => {

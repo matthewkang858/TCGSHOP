@@ -75,11 +75,22 @@ async function seedCatalog() {
         cleanName: p.cleanName ?? p.name,
         number: p.number ?? null,
         rarity: p.rarity ?? null,
-        imageUrl: null,
+        imageUrl: p.image ?? null,
         productType: classifyProduct({ name: p.name, number: p.number, rarity: p.rarity }),
       }))
     )
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: products.productId,
+      set: {
+        name: sql`excluded.name`,
+        cleanName: sql`excluded.clean_name`,
+        number: sql`excluded.number`,
+        rarity: sql`excluded.rarity`,
+        imageUrl: sql`excluded.image_url`,
+        productType: sql`excluded.product_type`,
+        updatedAt: sql`now()`,
+      },
+    });
   console.log(
     `✓ catalog: ${FIXTURE_PRODUCTS.length} products across ${FIXTURE_EXPANSIONS.length} set(s)`
   );
