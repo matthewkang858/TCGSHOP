@@ -1,0 +1,67 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --background: hsl(0 0% 100%);
+  --foreground: hsl(224 15% 12%);
+  --card: hsl(0 0% 100%);
+  --card-foreground: hsl(224 15% 12%);
+  --popover: hsl(0 0% 100%);
+  --popover-foreground: hsl(224 15% 12%);
+  --primary: hsl(240 55% 45%);
+  --primary-foreground: hsl(0 0% 100%);
+  --secondary: hsl(220 15% 95%);
+  --secondary-foreground: hsl(224 15% 20%);
+  --muted: hsl(220 15% 95%);
+  --muted-foreground: hsl(224 10% 45%);
+  --accent: hsl(220 15% 93%);
+  --accent-foreground: hsl(224 15% 15%);
+  --destructive: hsl(0 72% 45%);
+  --destructive-foreground: hsl(0 0% 100%);
+  --success: hsl(150 60% 32%);
+  --warning: hsl(38 90% 42%);
+  --border: hsl(220 13% 88%);
+  --input: hsl(220 13% 85%);
+  --ring: hsl(240 55% 45%);
+  --radius: 0.5rem;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 4px);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+}
+
+* {
+  border-color: var(--border);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
