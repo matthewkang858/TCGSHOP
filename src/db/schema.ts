@@ -9,6 +9,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
@@ -235,14 +236,10 @@ export const inventoryItems = pgTable(
     index("inventory_store_idx").on(t.storeId),
     index("inventory_product_idx").on(t.productId),
     // idempotent import key: one row per store/product/condition/printing/language.
-    // COALESCE printing since Postgres unique treats NULLs as distinct.
-    uniqueIndex("inventory_identity_uq").on(
-      t.storeId,
-      t.productId,
-      t.condition,
-      t.printing,
-      t.language
-    ),
+    // NULLS NOT DISTINCT so sealed items (printing NULL) upsert correctly.
+    unique("inventory_identity_uq")
+      .on(t.storeId, t.productId, t.condition, t.printing, t.language)
+      .nullsNotDistinct(),
   ]
 );
 

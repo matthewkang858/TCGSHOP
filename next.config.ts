@@ -9,6 +9,12 @@ const nextConfig: NextConfig = {
     ],
   },
   serverExternalPackages: ["pg-boss", "pg"],
+  experimental: {
+    serverActions: {
+      // CSV import round-trips parsed rows through server actions
+      bodySizeLimit: "8mb",
+    },
+  },
 };
 
 export default nextConfig;

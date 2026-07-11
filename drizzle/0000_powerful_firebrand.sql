@@ -70,7 +70,8 @@ CREATE TABLE "inventory_items" (
 	"tags" text[] DEFAULT '{}' NOT NULL,
 	"source_row" jsonb,
 	"created_at" timestamp DEFAULT now() NOT NULL,
-	"updated_at" timestamp DEFAULT now() NOT NULL
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "inventory_identity_uq" UNIQUE NULLS NOT DISTINCT("store_id","product_id","condition","printing","language")
 );
 --> statement-breakpoint
 CREATE TABLE "job_runs" (
@@ -251,7 +252,6 @@ CREATE INDEX "alerts_store_idx" ON "alerts" USING btree ("store_id");--> stateme
 CREATE INDEX "expansions_category_idx" ON "expansions" USING btree ("category_id");--> statement-breakpoint
 CREATE INDEX "inventory_store_idx" ON "inventory_items" USING btree ("store_id");--> statement-breakpoint
 CREATE INDEX "inventory_product_idx" ON "inventory_items" USING btree ("product_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "inventory_identity_uq" ON "inventory_items" USING btree ("store_id","product_id","condition","printing","language");--> statement-breakpoint
 CREATE INDEX "job_runs_name_idx" ON "job_runs" USING btree ("name","started_at");--> statement-breakpoint
 CREATE INDEX "snapshots_product_captured_idx" ON "price_snapshots" USING btree ("product_id","captured_at");--> statement-breakpoint
 CREATE INDEX "snapshots_lookup_idx" ON "price_snapshots" USING btree ("product_id","provider","listing","captured_at");--> statement-breakpoint

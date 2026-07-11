@@ -1,5 +1,5 @@
 {
-  "id": "c472767b-21c2-4c04-a10f-c6989d85f598",
+  "id": "06531943-9f87-453b-ba89-0a54ac1faf4a",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -554,45 +554,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "inventory_identity_uq": {
-          "name": "inventory_identity_uq",
-          "columns": [
-            {
-              "expression": "store_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "product_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "condition",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "printing",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "language",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -624,7 +585,19 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "inventory_identity_uq": {
+          "name": "inventory_identity_uq",
+          "nullsNotDistinct": true,
+          "columns": [
+            "store_id",
+            "product_id",
+            "condition",
+            "printing",
+            "language"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
