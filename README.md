@@ -76,9 +76,17 @@ Tier gating degrades gracefully:
   200-id bulk chunking) and run inside jobs. Pages read only local Postgres
   (`price_snapshots`, `sales_stats`, catalog cache).
 - **Offline dev mode**: with no API key the client serves bundled fixtures —
-  220 products (Pokemon Base Set + MTG Murders at Karlov Manor, including 18
-  sealed SKUs) and deterministic drifting price/sales generators, so the whole
-  app runs and demos with zero network. Fixture product IDs are synthetic.
+  Pokemon Base Set (102 singles + 8 sealed SKUs) with deterministic drifting
+  price/sales generators, so the whole app runs and demos with zero network.
+  Fixture product IDs are synthetic. Other games sync in live mode only.
+- **Product images**: live-synced products use the provider's real image
+  URLs; anything without one falls back to generated card-style SVG
+  placeholders (`/api/placeholder/[productId]`), so offline mode still looks
+  like a card catalog.
+- **Card Kingdom is Magic-only**: buylist sweeps, the CK buylist price card,
+  and `ck_buylist` / `buylist_arb` features are restricted to categoryId 1 —
+  CK doesn't buy other games, so showing a Pokemon "CK buylist" would be
+  fiction. Non-Magic product pages show a 30-day market range instead.
 
 ### Background jobs (pg-boss, `pnpm worker`)
 

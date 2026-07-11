@@ -5,6 +5,7 @@ import {
   alerts,
   inventoryItems,
   priceSnapshots,
+  products,
   salesStats,
   watchlistItems,
 } from "@/db/schema";
@@ -17,11 +18,18 @@ import { JOB } from "./names";
  * Price sweeps write our own price_snapshots history; alerts and charts read
  * ONLY local data. Providers swept:
  *  - tcgplayer retail  (tcg_market basis, charts, pct_change alerts)
- *  - cardkingdom buylist (ck_buylist basis, buylist_arb alerts)
+ *  - cardkingdom buylist (ck_buylist basis, buylist_arb alerts) - Card
+ *    Kingdom only buys Magic, so this target is restricted to categoryId 1
  */
-const SWEEP_TARGETS: { provider: TrendProvider; listing: TrendListing }[] = [
+const MAGIC_CATEGORY_ID = 1;
+
+const SWEEP_TARGETS: {
+  provider: TrendProvider;
+  listing: TrendListing;
+  categoryIds?: number[];
+}[] = [
   { provider: "tcgplayer", listing: "retail" },
-  { provider: "cardkingdom", listing: "buylist" },
+  { provider: "cardkingdom", listing: "buylist", categoryIds: [MAGIC_CATEGORY_ID] },
 ];
 
 /** don't record a new snapshot unless the price changed or the last one is older than this */
@@ -43,7 +51,22 @@ export async function sweepProducts(
 
   const affected = new Set<number>();
 
+  // category lookup so game-restricted targets (CK buylist = Magic) skip the rest
+  const categoryRows = await db
+    .select({ productId: products.productId, categoryId: products.categoryId })
+    .from(products)
+    .where(inArray(products.productId, productIds));
+  const categoryById = new Map(categoryRows.map((r) => [r.productId, r.categoryId]));
+
   for (const target of SWEEP_TARGETS) {
+    const targetIds = target.categoryIds
+      ? productIds.filter((id) => target.categoryIds!.includes(categoryById.get(id) ?? -1))
+      : productIds;
+    if (targetIds.length === 0) {
+      stats[`${target.provider}_${target.listing}`] = 0;
+      continue;
+    }
+
     // latest existing snapshot per product for change detection
     const latest = await db.execute<{
       product_id: number;
@@ -52,7 +75,7 @@ export async function sweepProducts(
     }>(sql`
       select distinct on (product_id) product_id, price, captured_at
       from price_snapshots
-      where product_id = any(${sql.param(productIds)}::int[])
+      where product_id = any(${sql.param(targetIds)}::int[])
         and provider = ${target.provider}
         and listing = ${target.listing}
       order by product_id, captured_at desc
@@ -66,7 +89,10 @@ export async function sweepProducts(
       });
     }
 
-    const trends = await client.bulkTrendPrices(productIds, target);
+    const trends = await client.bulkTrendPrices(targetIds, {
+      provider: target.provider,
+      listing: target.listing,
+    });
 
     const cutoff = Date.now() - SNAPSHOT_MIN_AGE_HOURS * 3600_000;
     const values = [];

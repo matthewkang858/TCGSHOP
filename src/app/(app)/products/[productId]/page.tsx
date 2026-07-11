@@ -1,8 +1,7 @@
-/* eslint-disable @next/next/no-img-element */
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { and, asc, desc, eq, gte, inArray } from "drizzle-orm";
-import { Eye, EyeOff, Package } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import { z } from "zod";
 import { db } from "@/db";
 import {
@@ -29,6 +28,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { PriceHistoryChart, type PricePoint } from "@/components/price-history-chart";
+import { ProductImage } from "@/components/product-image";
 import { formatDateTime, formatMoney } from "@/lib/utils";
 import { setProductTypeOverrideAction, toggleWatchlistAction } from "./actions";
 
@@ -52,6 +52,7 @@ export default async function ProductDetailPage({
       expansionName: expansions.name,
       gameName: games.displayName,
       groupId: products.groupId,
+      categoryId: products.categoryId,
     })
     .from(products)
     .innerJoin(expansions, eq(expansions.groupId, products.groupId))
@@ -112,26 +113,30 @@ export default async function ProductDetailPage({
       and(eq(watchlistItems.storeId, ctx.storeId), eq(watchlistItems.productId, productId))
     );
 
+  // Card Kingdom only buys Magic - show the buylist card there only
+  const isMagic = product.categoryId === 1;
   const spread =
-    latestMarket && latestBuylist
+    isMagic && latestMarket && latestBuylist
       ? (Number(latestBuylist.price) / Number(latestMarket.price)) * 100
+      : null;
+
+  // 30-day market range for the non-Magic third card
+  const marketValues = chartData.map((p) => p.market).filter((v): v is number => v != null);
+  const range30 =
+    marketValues.length > 0
+      ? { low: Math.min(...marketValues), high: Math.max(...marketValues) }
       : null;
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-start gap-4">
-          {product.imageUrl ? (
-            <img
-              src={product.imageUrl}
-              alt={product.name}
-              className="h-32 w-24 rounded-md border object-cover"
-            />
-          ) : (
-            <div className="flex h-32 w-24 items-center justify-center rounded-md border bg-muted">
-              <Package className="h-8 w-8 text-muted-foreground" />
-            </div>
-          )}
+          <ProductImage
+            productId={product.productId}
+            imageUrl={product.imageUrl}
+            name={product.name}
+            className="h-44 w-32 shrink-0"
+          />
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">{product.name}</h1>
             <p className="mt-1 text-sm text-muted-foreground">
@@ -176,19 +181,35 @@ export default async function ProductDetailPage({
             </p>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">CK Buylist</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-semibold tabular-nums">
-              {formatMoney(latestBuylist?.price ?? null)}
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {spread !== null ? `${spread.toFixed(0)}% of market` : "no snapshot yet"}
-            </p>
-          </CardContent>
-        </Card>
+        {isMagic ? (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm text-muted-foreground">
+                CK Buylist <span className="font-normal">(Magic only)</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-semibold tabular-nums">
+                {formatMoney(latestBuylist?.price ?? null)}
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {spread !== null ? `${spread.toFixed(0)}% of market` : "no snapshot yet"}
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm text-muted-foreground">30-day range</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-semibold tabular-nums">
+                {range30 ? `${formatMoney(range30.low)} – ${formatMoney(range30.high)}` : "—"}
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">market low / high</p>
+            </CardContent>
+          </Card>
+        )}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-muted-foreground">Sales velocity</CardTitle>

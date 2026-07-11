@@ -21,6 +21,7 @@ const fmtMoney = (v: number) =>
   v.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
 export function PriceHistoryChart({ data }: { data: PricePoint[] }) {
+  const hasBuylist = data.some((p) => p.buylist != null);
   if (data.length === 0) {
     return (
       <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">
@@ -64,15 +65,17 @@ export function PriceHistoryChart({ data }: { data: PricePoint[] }) {
           dot={false}
           connectNulls
         />
-        <Line
-          type="monotone"
-          dataKey="buylist"
-          name="CK Buylist"
-          stroke="hsl(150 60% 38%)"
-          strokeWidth={2}
-          dot={false}
-          connectNulls
-        />
+        {hasBuylist ? (
+          <Line
+            type="monotone"
+            dataKey="buylist"
+            name="CK Buylist"
+            stroke="hsl(150 60% 38%)"
+            strokeWidth={2}
+            dot={false}
+            connectNulls
+          />
+        ) : null}
       </LineChart>
     </ResponsiveContainer>
   );

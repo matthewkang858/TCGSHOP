@@ -19,6 +19,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatMoney } from "@/lib/utils";
+import { ProductImage } from "@/components/product-image";
 import { RowEditor } from "./row-editor";
 
 const searchSchema = z.object({
@@ -76,6 +77,7 @@ export default async function InventoryPage({
       id: inventoryItems.id,
       productId: inventoryItems.productId,
       productName: products.name,
+      imageUrl: products.imageUrl,
       expansionName: expansions.name,
       productType,
       condition: inventoryItems.condition,
@@ -198,15 +200,25 @@ export default async function InventoryPage({
                 {rows.map((item) => (
                   <TableRow key={item.id}>
                     <TableCell>
-                      <Link
-                        href={`/products/${item.productId}`}
-                        className="font-medium text-primary hover:underline"
-                      >
-                        {item.productName}
-                      </Link>
-                      {item.printing === "Foil" ? (
-                        <span className="ml-1 text-xs text-warning">✦ foil</span>
-                      ) : null}
+                      <div className="flex items-center gap-3">
+                        <ProductImage
+                          productId={item.productId}
+                          imageUrl={item.imageUrl}
+                          name={item.productName}
+                          className="h-14 w-10 shrink-0"
+                        />
+                        <span>
+                          <Link
+                            href={`/products/${item.productId}`}
+                            className="font-medium text-primary hover:underline"
+                          >
+                            {item.productName}
+                          </Link>
+                          {item.printing === "Foil" ? (
+                            <span className="ml-1 text-xs text-warning">✦ foil</span>
+                          ) : null}
+                        </span>
+                      </div>
                     </TableCell>
                     <TableCell className="text-muted-foreground">{item.expansionName}</TableCell>
                     <TableCell className="text-muted-foreground">{item.condition}</TableCell>

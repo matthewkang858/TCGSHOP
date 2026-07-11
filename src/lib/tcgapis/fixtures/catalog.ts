@@ -1,6 +1,7 @@
-// Bundled offline catalog: Pokemon Base Set + MTG Murders at Karlov Manor.
+// Bundled offline catalog: Pokemon Base Set (singles + sealed).
 // productIds/groupIds are SYNTHETIC (stable, but not real TCGplayer ids) -
-// offline mode is for demos and development only.
+// offline mode is for demos and development only. Other games appear in the
+// games list but sync their catalogs only in live mode.
 import type { ApiExpansion, ApiGame, ApiProduct } from "../types";
 
 export const FIXTURE_GAMES: ApiGame[] = [
@@ -10,7 +11,6 @@ export const FIXTURE_GAMES: ApiGame[] = [
 ];
 
 export const POKEMON_BASE_SET_GROUP = 604;
-export const MTG_MKM_GROUP = 23874;
 
 export const FIXTURE_EXPANSIONS: (ApiExpansion & { categoryId: number })[] = [
   {
@@ -19,13 +19,6 @@ export const FIXTURE_EXPANSIONS: (ApiExpansion & { categoryId: number })[] = [
     name: "Base Set",
     abbreviation: "BS",
     publishedOn: "1999-01-09",
-  },
-  {
-    groupId: MTG_MKM_GROUP,
-    categoryId: 1,
-    name: "Murders at Karlov Manor",
-    abbreviation: "MKM",
-    publishedOn: "2024-02-09",
   },
 ];
 
@@ -149,88 +142,6 @@ const BASE_SET_SEALED: string[] = [
   "Base Set Booster Display Case",
 ];
 
-const MKM_SINGLES: SingleTuple[] = [
-  ["1", "Anzrag, the Quake-Mole", "Mythic"],
-  ["2", "Aurelia, the Law Above", "Mythic"],
-  ["3", "Massacre Girl, Known Killer", "Mythic"],
-  ["4", "Vein Ripper", "Mythic"],
-  ["5", "Kaya, Spirits' Justice", "Mythic"],
-  ["6", "Rakdos, Patron of Chaos", "Mythic"],
-  ["7", "Niv-Mizzet, Guildpact", "Mythic"],
-  ["8", "Voja, Jaws of the Conclave", "Mythic"],
-  ["9", "Etrata, Deadly Fugitive", "Mythic"],
-  ["10", "Yarus, Roar of the Old Gods", "Mythic"],
-  ["11", "Delney, Streetwise Lookout", "Rare"],
-  ["12", "Leyline of the Guildpact", "Rare"],
-  ["13", "Archdruid's Charm", "Rare"],
-  ["14", "Judith, Carnage Connoisseur", "Rare"],
-  ["15", "Teysa, Opulent Oligarch", "Rare"],
-  ["16", "Tomik, Wielder of Law", "Rare"],
-  ["17", "Trostani, Three Whispers", "Rare"],
-  ["18", "Izoni, Center of the Web", "Rare"],
-  ["19", "Lazav, Wearer of Faces", "Rare"],
-  ["20", "Kellan, Inquisitive Prodigy", "Rare"],
-  ["21", "Assemble the Players", "Rare"],
-  ["22", "Case of the Gateway Express", "Rare"],
-  ["23", "Doppelgang", "Rare"],
-  ["24", "Fanatical Strength", "Common"],
-  ["25", "Deduce", "Common"],
-  ["26", "Forensic Gadgeteer", "Rare"],
-  ["27", "Undercover Crocodelf", "Uncommon"],
-  ["28", "Curious Cadaver", "Uncommon"],
-  ["29", "Gleaming Geardrake", "Uncommon"],
-  ["30", "Evidence Examiner", "Uncommon"],
-];
-
-// combinatorial filler to reach a realistic set size (~100 singles)
-const MKM_ADJ = [
-  "Shadowed",
-  "Gilded",
-  "Relentless",
-  "Cryptic",
-  "Vigilant",
-  "Wrongful",
-  "Midnight",
-  "Guildless",
-  "Ostentatious",
-  "Meticulous",
-];
-const MKM_NOUN = [
-  "Informant",
-  "Barrister",
-  "Prowler",
-  "Constable",
-  "Illusionist",
-  "Enforcer",
-  "Archivist",
-];
-const MKM_RARITY_CYCLE = ["Common", "Common", "Common", "Uncommon", "Uncommon", "Rare"];
-
-function mkmFiller(): SingleTuple[] {
-  const out: SingleTuple[] = [];
-  let n = 31;
-  for (const adj of MKM_ADJ) {
-    for (const noun of MKM_NOUN) {
-      out.push([String(n), `${adj} ${noun}`, MKM_RARITY_CYCLE[n % MKM_RARITY_CYCLE.length]]);
-      n++;
-    }
-  }
-  return out;
-}
-
-const MKM_SEALED: string[] = [
-  "Murders at Karlov Manor Play Booster Box",
-  "Murders at Karlov Manor Play Booster Pack",
-  "Murders at Karlov Manor Collector Booster Display",
-  "Murders at Karlov Manor Collector Booster Pack",
-  "Murders at Karlov Manor Bundle",
-  "Murders at Karlov Manor Prerelease Pack",
-  "Murders at Karlov Manor Commander Deck - Deadly Disguise",
-  "Murders at Karlov Manor Commander Deck - Blame Game",
-  "Murders at Karlov Manor Commander Deck - Revenant Recon",
-  "Murders at Karlov Manor Commander Deck - Deep Clue Sea",
-];
-
 function cleanName(name: string) {
   return name.replace(/[^a-zA-Z0-9 ]/g, "").replace(/\s+/g, " ").trim();
 }
@@ -253,30 +164,6 @@ function buildProducts(): (ApiProduct & { groupId: number })[] {
     products.push({
       productId: 42480 + i + 1,
       groupId: POKEMON_BASE_SET_GROUP,
-      name,
-      cleanName: cleanName(name),
-      number: null,
-      rarity: null,
-      image: null,
-    });
-  });
-
-  const mkmAll = [...MKM_SINGLES, ...mkmFiller()];
-  mkmAll.forEach(([number, name, rarity], i) => {
-    products.push({
-      productId: 530000 + i + 1,
-      groupId: MTG_MKM_GROUP,
-      name,
-      cleanName: cleanName(name),
-      number,
-      rarity,
-      image: null,
-    });
-  });
-  MKM_SEALED.forEach((name, i) => {
-    products.push({
-      productId: 530500 + i + 1,
-      groupId: MTG_MKM_GROUP,
       name,
       cleanName: cleanName(name),
       number: null,

@@ -19,6 +19,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatDateTime } from "@/lib/utils";
+import { ProductImage } from "@/components/product-image";
 import { triggerCatalogSync } from "./actions";
 
 const searchSchema = z.object({
@@ -70,6 +71,7 @@ export default async function ProductsPage({
       name: products.name,
       number: products.number,
       rarity: products.rarity,
+      imageUrl: products.imageUrl,
       productType: products.productType,
       productTypeOverride: products.productTypeOverride,
       expansionName: expansions.name,
@@ -184,8 +186,14 @@ export default async function ProductsPage({
                       <TableCell>
                         <Link
                           href={`/products/${p.productId}`}
-                          className="font-medium text-primary hover:underline"
+                          className="flex items-center gap-3 font-medium text-primary hover:underline"
                         >
+                          <ProductImage
+                            productId={p.productId}
+                            imageUrl={p.imageUrl}
+                            name={p.name}
+                            className="h-14 w-10 shrink-0"
+                          />
                           {p.name}
                         </Link>
                       </TableCell>

@@ -26,7 +26,7 @@ const TYPE_INFO: Record<string, { label: string; hint: string }> = {
   },
   buylist_arb: {
     label: "Buylist arbitrage",
-    hint: "Fires when Card Kingdom's buylist reaches X% of TCG market — a sell-to-buylist spread signal.",
+    hint: "Fires when Card Kingdom's buylist reaches X% of TCG market — a sell-to-buylist spread signal. Magic only (Card Kingdom doesn't buy other games).",
   },
   restock_velocity: {
     label: "Restock signal",

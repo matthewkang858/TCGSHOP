@@ -1,7 +1,7 @@
 /**
  * `pnpm seed` - demo data so the full loop works immediately, offline:
  *  - demo store + user (magic link logs to console)
- *  - fixture catalog (Pokemon Base Set + MTG Murders at Karlov Manor)
+ *  - fixture catalog (Pokemon Base Set - singles + sealed)
  *  - ~50 inventory lines: singles across conditions + 8 sealed w/ cost basis
  *  - 2 reprice rules (singles peg / sealed margin-guarded)
  *  - 3 alerts (pct_change 7d>=20%, buylist_arb 85%, restock on a booster box)
@@ -80,7 +80,9 @@ async function seedCatalog() {
       }))
     )
     .onConflictDoNothing();
-  console.log(`✓ catalog: ${FIXTURE_PRODUCTS.length} products across 2 sets`);
+  console.log(
+    `✓ catalog: ${FIXTURE_PRODUCTS.length} products across ${FIXTURE_EXPANSIONS.length} set(s)`
+  );
 }
 
 /** does this product carry the fixture "recent spike"? */
@@ -129,15 +131,13 @@ async function main() {
     classifyProduct({ name: p.name, number: p.number, rarity: p.rarity }) === "sealed";
 
   const pokeSingles = byGroup(604).filter((p) => !isSealed(p));
-  const mtgSingles = byGroup(23874).filter((p) => !isSealed(p));
   const sealed = FIXTURE_PRODUCTS.filter(isSealed);
 
   // prefer products with the fixture spike so pct_change alerts demo
-  const spiked = [...pokeSingles, ...mtgSingles].filter((p) => hasSpike(p.productId));
+  const spiked = pokeSingles.filter((p) => hasSpike(p.productId));
   const pickSingles = [
     ...spiked.slice(0, 8),
-    ...pokeSingles.filter((p) => !spiked.includes(p)).slice(0, 18),
-    ...mtgSingles.filter((p) => !spiked.includes(p)).slice(0, 16),
+    ...pokeSingles.filter((p) => !spiked.includes(p)).slice(0, 34),
   ].slice(0, 42);
 
   const conditions = ["Near Mint", "Near Mint", "Lightly Played", "Moderately Played", "Heavily Played"];
@@ -178,7 +178,8 @@ async function main() {
   console.log(`✓ inventory: ${singleRows.length} singles + ${sealedRows.length} sealed`);
 
   // a couple of watchlist products (not stocked) for watchlist sweeps
-  const watch = mtgSingles.slice(20, 23);
+  const inventoryIds = new Set(pickSingles.map((p) => p.productId));
+  const watch = pokeSingles.filter((p) => !inventoryIds.has(p.productId)).slice(0, 3);
   await db
     .insert(watchlistItems)
     .values(watch.map((p) => ({ storeId: store.id, productId: p.productId })));
@@ -261,8 +262,16 @@ async function main() {
   ];
   // re-seeds must not stack duplicate history
   await db.delete(priceSnapshots).where(inArray(priceSnapshots.productId, allSeededProducts));
+
+  // Card Kingdom only buys Magic - buylist snapshots exist for category 1 only
+  const magicGroups = new Set(
+    FIXTURE_EXPANSIONS.filter((e) => e.categoryId === 1).map((e) => e.groupId)
+  );
+  const productGroup = new Map(FIXTURE_PRODUCTS.map((p) => [p.productId, p.groupId]));
+
   const snapshotValues: (typeof priceSnapshots.$inferInsert)[] = [];
   for (const productId of allSeededProducts) {
+    const isMagic = magicGroups.has(productGroup.get(productId) ?? -1);
     for (let daysAgo = 29; daysAgo >= 0; daysAgo--) {
       const when = new Date(Date.now() - daysAgo * DAY);
       snapshotValues.push({
@@ -274,15 +283,17 @@ async function main() {
         currency: "USD",
         capturedAt: when,
       });
-      snapshotValues.push({
-        productId,
-        provider: "cardkingdom",
-        listing: "buylist",
-        finish: "normal",
-        price: fixturePrice(productId, "cardkingdom", "buylist", when).toFixed(2),
-        currency: "USD",
-        capturedAt: when,
-      });
+      if (isMagic) {
+        snapshotValues.push({
+          productId,
+          provider: "cardkingdom",
+          listing: "buylist",
+          finish: "normal",
+          price: fixturePrice(productId, "cardkingdom", "buylist", when).toFixed(2),
+          currency: "USD",
+          capturedAt: when,
+        });
+      }
     }
   }
   for (let i = 0; i < snapshotValues.length; i += 1000) {
