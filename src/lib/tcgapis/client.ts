@@ -98,12 +98,14 @@ export class TcgApisClient {
   }
 
   supports(feature: "prices" | "sales" | "trendprices" | "skuprices" | "livelistings"): boolean {
+    if (this.offline) return true; // fixtures cost nothing - full demo offline
     const required: Tier =
       feature === "skuprices" || feature === "livelistings" ? "unlimited" : "business";
     return TIER_RANK[this.tier] >= TIER_RANK[required];
   }
 
   private assertTier(feature: string, required: Tier) {
+    if (this.offline) return; // fixture mode is never tier-gated
     if (TIER_RANK[this.tier] < TIER_RANK[required]) {
       throw new TierError(feature, required, this.tier);
     }
