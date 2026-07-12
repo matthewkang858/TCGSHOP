@@ -27,6 +27,7 @@ import {
   watchlistItems,
 } from "./schema";
 import { classifyProduct } from "@/lib/catalog/classifier";
+import { suggestedStickerPrice } from "@/lib/sticker";
 import {
   FIXTURE_EXPANSIONS,
   FIXTURE_GAMES,
@@ -216,6 +217,28 @@ async function main() {
 
   await db.insert(inventoryItems).values([...singleRows, ...sealedRows]);
   console.log(`✓ inventory: ${singleRows.length} singles + ${sealedRows.length} sealed`);
+
+  // shelf stickers as of ~2 weeks ago: items whose price has since moved show
+  // up in the dashboard sticker queue; every 5th line never got a sticker
+  const insertedItems = await db
+    .select({ id: inventoryItems.id, productId: inventoryItems.productId })
+    .from(inventoryItems)
+    .where(eq(inventoryItems.storeId, store.id));
+  let stickered = 0;
+  for (const [i, item] of insertedItems.entries()) {
+    if (i % 5 === 4) continue; // needs a first sticker
+    const then = new Date(Date.now() - 14 * DAY);
+    const sticker = suggestedStickerPrice(
+      fixturePrice(item.productId, "tcgplayer", "retail", then)
+    );
+    if (sticker <= 0) continue;
+    await db
+      .update(inventoryItems)
+      .set({ stickerPrice: sticker.toFixed(2), stickerUpdatedAt: then })
+      .where(eq(inventoryItems.id, item.id));
+    stickered++;
+  }
+  console.log(`✓ shelf stickers recorded for ${stickered} lines (2 weeks stale)`);
 
   // a couple of watchlist products (not stocked) for watchlist sweeps
   const inventoryIds = new Set(pickSingles.map((p) => p.productId));

@@ -5,7 +5,9 @@ import {
   ArrowUpRight,
   Bell,
   Boxes,
+  Check,
   Tags,
+  TicketPercent,
   TrendingUp,
   Upload,
 } from "lucide-react";
@@ -18,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { InventoryValueChart, type ValuePoint } from "@/components/inventory-value-chart";
 import { cn, formatDateTime, formatMoney, formatPct } from "@/lib/utils";
+import { markStickerUpdatedAction } from "./actions";
 
 export default async function DashboardPage() {
   const ctx = await requireStore();
@@ -151,6 +154,47 @@ export default async function DashboardPage() {
     .orderBy(desc(repriceRuns.createdAt))
     .limit(1);
 
+  // Sticker queue: lines whose shelf sticker no longer matches the system
+  // price. `suggested` mirrors suggestedStickerPrice in src/lib/sticker.ts:
+  // >=$20 nearest $5, $5-20 nearest $1, <$5 exact cents.
+  const stickerQueue = hasInventory
+    ? await db.execute<{
+        id: string;
+        product_id: number;
+        name: string;
+        image_url: string | null;
+        condition: string;
+        quantity: number;
+        current_price: string;
+        sticker_price: string | null;
+        suggested: string;
+        total: string;
+      }>(sql`
+        with candidates as (
+          select i.id, i.condition, i.quantity, i.current_price, i.sticker_price,
+                 p.product_id, p.name, p.image_url,
+                 case
+                   when i.current_price >= 20 then round(i.current_price / 5) * 5
+                   when i.current_price >= 5 then round(i.current_price)
+                   else i.current_price
+                 end as suggested
+          from inventory_items i
+          join products p on p.product_id = i.product_id
+          where i.store_id = ${storeId} and i.quantity > 0 and i.current_price is not null
+        ),
+        due as (
+          select * from candidates
+          where sticker_price is null or sticker_price <> suggested
+        )
+        select *, count(*) over () as total
+        from due
+        order by (sticker_price is not null) desc,
+                 abs(suggested - coalesce(sticker_price, suggested)) desc
+        limit 12
+      `).then((r) => r.rows)
+    : [];
+  const stickerTotal = stickerQueue.length > 0 ? Number(stickerQueue[0].total) : 0;
+
   return (
     <div className="space-y-6">
       <PageHeader title="Dashboard" description={`${ctx.storeName} at a glance.`} />
@@ -205,6 +249,97 @@ export default async function DashboardPage() {
               href={lastRun ? `/repricing/runs/${lastRun.id}` : "/repricing"}
             />
           </div>
+
+          <Card className={stickerTotal > 0 ? "border-warning/50" : undefined}>
+            <CardHeader className="flex-row items-center justify-between space-y-0">
+              <CardTitle className="flex items-center gap-2">
+                <TicketPercent className="h-4 w-4" />
+                Sticker queue
+                {stickerTotal > 0 ? (
+                  <Badge variant="warning">{stickerTotal} to re-label</Badge>
+                ) : (
+                  <Badge variant="success">all current</Badge>
+                )}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {stickerQueue.length === 0 ? (
+                <p className="py-2 text-sm text-muted-foreground">
+                  Every shelf sticker matches the current price. When a reprice run (or a
+                  price edit) moves an item past its sticker, it shows up here as a to-do.
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
+                  {stickerQueue.map((s) => {
+                    const suggested = Number(s.suggested);
+                    const old = s.sticker_price !== null ? Number(s.sticker_price) : null;
+                    const delta = old !== null ? suggested - old : null;
+                    return (
+                      <div
+                        key={s.id}
+                        className="flex items-center justify-between gap-3 rounded-md border px-3 py-2"
+                      >
+                        <div className="min-w-0">
+                          <Link
+                            href={`/products/${s.product_id}`}
+                            className="block truncate text-sm font-medium text-primary hover:underline"
+                          >
+                            {s.name}
+                          </Link>
+                          <span className="text-xs text-muted-foreground">
+                            {s.condition} · {s.quantity} in stock
+                          </span>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-3">
+                          <div className="text-right">
+                            <div className="text-sm font-semibold tabular-nums">
+                              {old !== null ? (
+                                <>
+                                  <span className="font-normal text-muted-foreground line-through">
+                                    {formatMoney(old)}
+                                  </span>{" "}
+                                  → {formatMoney(suggested)}
+                                </>
+                              ) : (
+                                <>{formatMoney(suggested)}</>
+                              )}
+                            </div>
+                            <div
+                              className={cn(
+                                "text-xs tabular-nums",
+                                delta === null
+                                  ? "text-muted-foreground"
+                                  : delta >= 0
+                                    ? "text-success"
+                                    : "text-destructive"
+                              )}
+                            >
+                              {delta === null
+                                ? "needs first sticker"
+                                : `${delta >= 0 ? "+" : "−"}${formatMoney(Math.abs(delta)).replace("$", "$")}`}
+                            </div>
+                          </div>
+                          <form action={markStickerUpdatedAction}>
+                            <input type="hidden" name="itemId" value={s.id} />
+                            <Button type="submit" size="sm" variant="outline">
+                              <Check />
+                              Updated
+                            </Button>
+                          </form>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {stickerTotal > stickerQueue.length ? (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Showing the {stickerQueue.length} biggest moves of {stickerTotal} total.
+                  Mark these updated and the next batch appears.
+                </p>
+              ) : null}
+            </CardContent>
+          </Card>
 
           <Card>
             <CardHeader>

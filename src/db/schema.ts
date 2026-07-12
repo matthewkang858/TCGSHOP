@@ -227,6 +227,9 @@ export const inventoryItems = pgTable(
     quantity: integer("quantity").notNull().default(0),
     currentPrice: numeric("current_price", { precision: 12, scale: 2 }),
     costBasis: numeric("cost_basis", { precision: 12, scale: 2 }),
+    /** price on the physical shelf sticker, recorded when staff mark it updated */
+    stickerPrice: numeric("sticker_price", { precision: 12, scale: 2 }),
+    stickerUpdatedAt: timestamp("sticker_updated_at"),
     tags: text("tags").array().notNull().default([]),
     sourceRow: jsonb("source_row").$type<Record<string, string>>(),
     createdAt: timestamp("created_at").notNull().defaultNow(),

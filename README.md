@@ -152,6 +152,19 @@ Discord webhook embed and email to store owners per store settings; results
 recorded in `alert_events.delivered`. Dedupe per (alert, product) via
 `cooldown_hours`.
 
+### Sticker queue (dashboard)
+
+Software prices are worthless if the shelf still shows last month's number,
+so the dashboard keeps a physical re-labeling to-do list. Each inventory
+line remembers the price staff last put on its shelf sticker
+(`sticker_price` + `sticker_updated_at`). Whenever the system price (reprice
+run or manual edit) drifts past the sticker, the line appears in the queue
+sorted by dollar impact; hitting **Updated** records the new sticker and it
+stays gone until the price moves again. Suggested sticker prices round in
+tiers (`src/lib/sticker.ts`): ≥ $20 to the nearest $5, $5–20 to the nearest
+dollar, under $5 exact cents — nobody re-stickers a booster box over 37
+cents.
+
 ## Decisions made (and why)
 
 - **Sealed classifier**: `sealed` ⇔ no collector number AND no rarity AND the
