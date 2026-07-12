@@ -32,3 +32,23 @@ export async function markStickerUpdatedAction(formData: FormData) {
 
   revalidatePath("/dashboard");
 }
+
+/**
+ * "We no longer carry this" - staff on the sticker walk found the shelf spot
+ * empty. Zeroes the quantity (reversible; the line and its history survive)
+ * so it leaves the queue and the store's working checklist. Restocking via
+ * import or an inline edit brings it back.
+ */
+export async function markNotCarriedAction(formData: FormData) {
+  const ctx = await requireStore();
+  await assertMembership(ctx.storeId);
+  const id = z.string().uuid().parse(formData.get("itemId"));
+
+  await db
+    .update(inventoryItems)
+    .set({ quantity: 0, updatedAt: new Date() })
+    .where(and(eq(inventoryItems.id, id), eq(inventoryItems.storeId, ctx.storeId)));
+
+  revalidatePath("/dashboard");
+  revalidatePath("/inventory");
+}

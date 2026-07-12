@@ -6,6 +6,7 @@ import {
   Bell,
   Boxes,
   Check,
+  PackageX,
   Tags,
   TicketPercent,
   TrendingUp,
@@ -20,7 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { InventoryValueChart, type ValuePoint } from "@/components/inventory-value-chart";
 import { cn, formatDateTime, formatMoney, formatPct } from "@/lib/utils";
-import { markStickerUpdatedAction } from "./actions";
+import { markNotCarriedAction, markStickerUpdatedAction } from "./actions";
 
 export default async function DashboardPage() {
   const ctx = await requireStore();
@@ -319,13 +320,28 @@ export default async function DashboardPage() {
                                 : `${delta >= 0 ? "+" : "−"}${formatMoney(Math.abs(delta)).replace("$", "$")}`}
                             </div>
                           </div>
-                          <form action={markStickerUpdatedAction}>
-                            <input type="hidden" name="itemId" value={s.id} />
-                            <Button type="submit" size="sm" variant="outline">
-                              <Check />
-                              Updated
-                            </Button>
-                          </form>
+                          <div className="flex flex-col gap-1">
+                            <form action={markStickerUpdatedAction}>
+                              <input type="hidden" name="itemId" value={s.id} />
+                              <Button type="submit" size="sm" variant="outline" className="w-full">
+                                <Check />
+                                Updated
+                              </Button>
+                            </form>
+                            <form action={markNotCarriedAction}>
+                              <input type="hidden" name="itemId" value={s.id} />
+                              <Button
+                                type="submit"
+                                size="sm"
+                                variant="ghost"
+                                className="w-full text-xs text-muted-foreground"
+                                title="Shelf spot is empty - remove from the working checklist (sets quantity to 0; restock brings it back)"
+                              >
+                                <PackageX />
+                                Don&apos;t carry
+                              </Button>
+                            </form>
+                          </div>
                         </div>
                       </div>
                     );
