@@ -266,7 +266,14 @@ export async function runWatchlistSweep(): Promise<void> {
   });
 }
 
-export async function runInventorySweep(): Promise<void> {
+/**
+ * Nightly inventory-wide sweep. By default alert evaluation is enqueued for
+ * the worker; `inlineAlertEval` runs it in-process instead - used by the
+ * serverless cron endpoint where no worker exists.
+ */
+export async function runInventorySweep(
+  opts: { inlineAlertEval?: boolean } = {}
+): Promise<void> {
   await withJobRun(JOB.PRICE_SWEEP_INVENTORY, async (stats) => {
     const rows = await db
       .selectDistinct({ productId: inventoryItems.productId })
@@ -291,8 +298,13 @@ export async function runInventorySweep(): Promise<void> {
     );
 
     if (affected.length > 0) {
-      const { enqueueJob } = await import("./boss");
-      await enqueueJob(JOB.ALERT_EVAL, { productIds: affected, source: "inventory-sweep" });
+      if (opts.inlineAlertEval) {
+        const { runAlertEval } = await import("./alert-eval");
+        await runAlertEval({ productIds: affected, source: "inventory-sweep-inline" });
+      } else {
+        const { enqueueJob } = await import("./boss");
+        await enqueueJob(JOB.ALERT_EVAL, { productIds: affected, source: "inventory-sweep" });
+      }
     }
   });
 }
