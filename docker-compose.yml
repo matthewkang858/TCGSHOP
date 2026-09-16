@@ -1,0 +1,20 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: countertop-db
+    environment:
+      POSTGRES_USER: countertop
+      POSTGRES_PASSWORD: countertop
+      POSTGRES_DB: countertop
+    ports:
+      - "5432:5432"
+    volumes:
+      - countertop-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U countertop"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  countertop-pgdata:
