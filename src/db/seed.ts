@@ -167,6 +167,24 @@ async function main() {
   await db.insert(memberships).values({ userId: user.id, storeId: store.id, role: "owner" });
   console.log(`✓ store "${DEMO_STORE}" + user ${DEMO_EMAIL}`);
 
+  // Hosted demos: SEED_OWNER_EMAIL=you@example.com pnpm seed
+  // adds a real, magic-link-reachable owner to the demo store.
+  const extraOwner = process.env.SEED_OWNER_EMAIL?.trim();
+  if (extraOwner) {
+    let [owner] = await db.select().from(users).where(eq(users.email, extraOwner));
+    if (!owner) {
+      [owner] = await db
+        .insert(users)
+        .values({ email: extraOwner, emailVerified: new Date() })
+        .returning();
+    }
+    await db
+      .insert(memberships)
+      .values({ userId: owner.id, storeId: store.id, role: "owner" })
+      .onConflictDoNothing();
+    console.log(`✓ added ${extraOwner} as demo store owner`);
+  }
+
   // --- inventory ------------------------------------------------------------
   const byGroup = (groupId: number) => FIXTURE_PRODUCTS.filter((p) => p.groupId === groupId);
   const isSealed = (p: (typeof FIXTURE_PRODUCTS)[number]) =>
