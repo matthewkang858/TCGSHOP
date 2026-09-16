@@ -15,6 +15,13 @@
       "when": 1783814920636,
       "tag": "0001_glorious_blazing_skull",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789534156154,
+      "tag": "0002_sparkling_red_shift",
+      "breakpoints": true
     }
   ]
 }

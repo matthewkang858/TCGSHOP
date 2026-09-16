@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/table";
 import { PriceHistoryChart, type PricePoint } from "@/components/price-history-chart";
 import { ProductImage } from "@/components/product-image";
+import { realizedSaleStats } from "@/lib/transactions/service";
 import { formatDateTime, formatMoney } from "@/lib/utils";
 import { setProductTypeOverrideAction, toggleWatchlistAction } from "./actions";
 
@@ -127,6 +128,9 @@ export default async function ProductDetailPage({
       ? { low: Math.min(...marketValues), high: Math.max(...marketValues) }
       : null;
 
+  // the store's own realized street price - the data the platform builds on
+  const realized = await realizedSaleStats(ctx.storeId, productId, 30);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -223,6 +227,30 @@ export default async function ProductDetailPage({
               7d median {formatMoney(statByWindow.get("7d")?.medianPrice ?? null)} · trend{" "}
               {statByWindow.get("24h")?.trend ?? "—"}
             </p>
+            {realized.count > 0 ? (
+              <p className="mt-2 border-t pt-2 text-xs">
+                <span className="font-medium">Your counter (30d):</span>{" "}
+                {realized.count} sold @ avg {formatMoney(realized.avgPrice)}
+                {realized.avgPrice != null && latestMarket ? (
+                  <span
+                    className={
+                      realized.avgPrice >= Number(latestMarket.price)
+                        ? "text-success"
+                        : "text-warning"
+                    }
+                  >
+                    {" "}
+                    ({realized.avgPrice >= Number(latestMarket.price) ? "+" : ""}
+                    {(
+                      ((realized.avgPrice - Number(latestMarket.price)) /
+                        Number(latestMarket.price)) *
+                      100
+                    ).toFixed(0)}
+                    % vs market)
+                  </span>
+                ) : null}
+              </p>
+            ) : null}
           </CardContent>
         </Card>
       </div>

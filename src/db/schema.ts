@@ -49,6 +49,7 @@ export const alertTypeEnum = pgEnum("alert_type", [
 ]);
 export const membershipRoleEnum = pgEnum("membership_role", ["owner", "member"]);
 export const jobStatusEnum = pgEnum("job_status", ["running", "succeeded", "failed"]);
+export const transactionSideEnum = pgEnum("transaction_side", ["sale", "purchase"]);
 
 // ---------------------------------------------------------------------------
 // Auth.js tables (users/accounts/sessions/verification tokens)
@@ -456,6 +457,42 @@ export const watchlistItems = pgTable(
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => [uniqueIndex("watchlist_uq").on(t.storeId, t.productId)]
+);
+
+// ---------------------------------------------------------------------------
+// Transactions - the in-person ledger. Every counter sale/buy a store records
+// is one row here. THIS is the data the platform is built on: realized street
+// prices that no marketplace tape captures.
+// ---------------------------------------------------------------------------
+
+export const transactions = pgTable(
+  "transactions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    storeId: uuid("store_id")
+      .notNull()
+      .references(() => stores.id, { onDelete: "cascade" }),
+    productId: integer("product_id")
+      .notNull()
+      .references(() => products.productId),
+    side: transactionSideEnum("side").notNull(),
+    condition: text("condition").notNull().default("Near Mint"),
+    printing: text("printing"),
+    language: text("language").notNull().default("English"),
+    quantity: integer("quantity").notNull().default(1),
+    /** realized price per unit, in dollars */
+    unitPrice: numeric("unit_price", { precision: 12, scale: 2 }).notNull(),
+    occurredAt: timestamp("occurred_at").notNull().defaultNow(),
+    /** manual (counter entry) | seed; future: scan, nightly_close, pos_sync */
+    source: text("source").notNull().default("manual"),
+    notes: text("notes"),
+    recordedBy: uuid("recorded_by").references(() => users.id),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("transactions_store_occurred_idx").on(t.storeId, t.occurredAt),
+    index("transactions_product_occurred_idx").on(t.productId, t.occurredAt),
+  ]
 );
 
 // ---------------------------------------------------------------------------

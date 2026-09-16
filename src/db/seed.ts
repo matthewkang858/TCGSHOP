@@ -23,6 +23,7 @@ import {
   salesStats,
   skus,
   stores,
+  transactions,
   users,
   watchlistItems,
 } from "./schema";
@@ -404,6 +405,55 @@ async function main() {
       },
     });
   console.log(`✓ sales stats for ${allSeededProducts.length} products`);
+
+  // --- counter transactions: 2 weeks of realistic sales/buys -----------------
+  // sold at roughly sticker prices (market ± a few %), bought at 60-75% of
+  // market - this is the realized-price ledger the platform builds on
+  const txValues: (typeof transactions.$inferInsert)[] = [];
+  const sellable = [...singleRows.slice(0, 18), ...sealedRows.slice(0, 3)];
+  sellable.forEach((line, i) => {
+    const salesCount = 1 + (i % 3); // 1-3 sales per item over the window
+    for (let s = 0; s < salesCount; s++) {
+      const daysAgo = (i * 3 + s * 5) % 14;
+      const when = new Date(Date.now() - daysAgo * DAY - (i % 12) * 3600_000);
+      const market = fixturePrice(line.productId, "tcgplayer", "retail", when);
+      const realized = market * (0.96 + ((i + s) % 5) * 0.02); // 96-104% of market
+      txValues.push({
+        storeId: store.id,
+        productId: line.productId,
+        side: "sale",
+        condition: line.condition,
+        printing: line.printing,
+        language: "English",
+        quantity: 1,
+        unitPrice: Math.max(0.25, realized).toFixed(2),
+        occurredAt: when,
+        source: "seed",
+        recordedBy: user.id,
+      });
+    }
+    if (i % 4 === 0) {
+      const when = new Date(Date.now() - ((i * 2) % 13) * DAY - 5 * 3600_000);
+      const market = fixturePrice(line.productId, "tcgplayer", "retail", when);
+      txValues.push({
+        storeId: store.id,
+        productId: line.productId,
+        side: "purchase",
+        condition: line.condition,
+        printing: line.printing,
+        language: "English",
+        quantity: 1 + (i % 2),
+        unitPrice: Math.max(0.1, market * (0.6 + (i % 3) * 0.075)).toFixed(2),
+        occurredAt: when,
+        source: "seed",
+        recordedBy: user.id,
+      });
+    }
+  });
+  await db.insert(transactions).values(txValues);
+  console.log(
+    `✓ counter ledger: ${txValues.filter((t) => t.side === "sale").length} sales + ${txValues.filter((t) => t.side === "purchase").length} buys over 2 weeks`
+  );
 
   // --- fire one evaluation pass so the alert feed demos immediately -----------------
   await runAlertEval({ productIds: allSeededProducts, source: "seed" });

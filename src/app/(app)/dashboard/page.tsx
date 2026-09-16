@@ -7,13 +7,14 @@ import {
   Boxes,
   Check,
   PackageX,
+  Receipt,
   Tags,
   TicketPercent,
   TrendingUp,
   Upload,
 } from "lucide-react";
 import { db } from "@/db";
-import { alertEvents, alerts, expansions, products, repriceRuns } from "@/db/schema";
+import { alertEvents, alerts, expansions, products, repriceRuns, transactions } from "@/db/schema";
 import { requireStore } from "@/lib/tenancy";
 import { EmptyState, PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -154,6 +155,22 @@ export default async function DashboardPage() {
     .where(eq(repriceRuns.storeId, storeId))
     .orderBy(desc(repriceRuns.createdAt))
     .limit(1);
+
+  const recentTransactions = await db
+    .select({
+      id: transactions.id,
+      side: transactions.side,
+      quantity: transactions.quantity,
+      unitPrice: transactions.unitPrice,
+      occurredAt: transactions.occurredAt,
+      productId: products.productId,
+      productName: products.name,
+    })
+    .from(transactions)
+    .innerJoin(products, eq(products.productId, transactions.productId))
+    .where(eq(transactions.storeId, storeId))
+    .orderBy(desc(transactions.occurredAt))
+    .limit(5);
 
   // Sticker queue: lines whose shelf sticker no longer matches the system
   // price. `suggested` mirrors suggestedStickerPrice in src/lib/sticker.ts:
@@ -366,7 +383,57 @@ export default async function DashboardPage() {
             </CardContent>
           </Card>
 
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 xl:grid-cols-3">
+            <Card>
+              <CardHeader className="flex-row items-center justify-between space-y-0">
+                <CardTitle className="flex items-center gap-2">
+                  <Receipt className="h-4 w-4" />
+                  Counter activity
+                </CardTitle>
+                <Link href="/transactions" className="text-sm text-primary hover:underline">
+                  Record a sale
+                </Link>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {recentTransactions.length === 0 ? (
+                  <p className="py-4 text-center text-sm text-muted-foreground">
+                    No sales or buys recorded yet.{" "}
+                    <Link href="/transactions" className="text-primary hover:underline">
+                      Record the first one
+                    </Link>{" "}
+                    — every entry builds your store&apos;s realized-price history.
+                  </p>
+                ) : (
+                  recentTransactions.map((t) => (
+                    <div
+                      key={t.id}
+                      className="flex items-center justify-between gap-2 rounded-md border px-3 py-2"
+                    >
+                      <div className="min-w-0">
+                        <Link
+                          href={`/products/${t.productId}`}
+                          className="block truncate text-sm font-medium text-primary hover:underline"
+                        >
+                          {t.productName}
+                        </Link>
+                        <span className="text-xs text-muted-foreground">
+                          {formatDateTime(t.occurredAt)}
+                        </span>
+                      </div>
+                      <div
+                        className={cn(
+                          "shrink-0 text-sm font-semibold tabular-nums",
+                          t.side === "sale" ? "text-success" : "text-muted-foreground"
+                        )}
+                      >
+                        {t.side === "sale" ? "+" : "−"}
+                        {formatMoney(Number(t.unitPrice) * t.quantity)}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </CardContent>
+            </Card>
             <Card>
               <CardHeader className="flex-row items-center justify-between space-y-0">
                 <CardTitle className="flex items-center gap-2">

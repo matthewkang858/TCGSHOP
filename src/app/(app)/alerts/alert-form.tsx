@@ -2,14 +2,14 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { CircleAlert, Loader2, Plus, Search } from "lucide-react";
+import { CircleAlert, Loader2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { createAlertAction } from "./actions";
-import { productSearchAction, type SerializedCandidate } from "../inventory/import/actions";
+import { ProductPicker, type PickedProduct } from "@/components/product-picker";
 
 const TYPE_INFO: Record<string, { label: string; hint: string }> = {
   pct_change: {
@@ -32,89 +32,11 @@ const TYPE_INFO: Record<string, { label: string; hint: string }> = {
   },
 };
 
-function ProductPicker({
-  value,
-  onChange,
-}: {
-  value: { id: number; label: string } | null;
-  onChange: (v: { id: number; label: string } | null) => void;
-}) {
-  const [query, setQuery] = React.useState("");
-  const [results, setResults] = React.useState<SerializedCandidate[]>([]);
-  const [searching, setSearching] = React.useState(false);
-
-  async function search() {
-    if (query.trim().length < 2) return;
-    setSearching(true);
-    try {
-      setResults(await productSearchAction(query.trim()));
-    } finally {
-      setSearching(false);
-    }
-  }
-
-  if (value) {
-    return (
-      <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
-        <span className="flex-1 truncate">{value.label}</span>
-        <Button variant="ghost" size="sm" onClick={() => onChange(null)} type="button">
-          change
-        </Button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-2">
-      <div className="flex gap-2">
-        <Input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search the catalog…"
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              search();
-            }
-          }}
-        />
-        <Button type="button" variant="secondary" onClick={search} disabled={searching}>
-          {searching ? <Loader2 className="animate-spin" /> : <Search />}
-        </Button>
-      </div>
-      {results.length > 0 ? (
-        <div className="max-h-44 overflow-y-auto rounded-md border">
-          {results.map((r) => (
-            <button
-              key={r.productId}
-              type="button"
-              className="block w-full border-b px-3 py-2 text-left text-sm last:border-0 hover:bg-accent"
-              onClick={() =>
-                onChange({
-                  id: r.productId,
-                  label: `${r.name}${r.expansionName ? ` · ${r.expansionName}` : ""}`,
-                })
-              }
-            >
-              {r.name}
-              <span className="text-muted-foreground">
-                {r.number ? ` #${r.number}` : ""}
-                {r.expansionName ? ` · ${r.expansionName}` : ""}
-                {r.productType === "sealed" ? " · sealed" : ""}
-              </span>
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 export function AlertForm() {
   const router = useRouter();
   const [type, setType] = React.useState<string>("pct_change");
   const [name, setName] = React.useState("");
-  const [product, setProduct] = React.useState<{ id: number; label: string } | null>(null);
+  const [product, setProduct] = React.useState<PickedProduct | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [fields, setFields] = React.useState<Record<string, string>>({

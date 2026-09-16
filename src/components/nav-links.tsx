@@ -7,6 +7,7 @@ import {
   Boxes,
   LayoutDashboard,
   Library,
+  Receipt,
   Settings,
   Tags,
 } from "lucide-react";
@@ -14,6 +15,7 @@ import { cn } from "@/lib/utils";
 
 const links = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/transactions", label: "Transactions", icon: Receipt },
   { href: "/inventory", label: "Inventory", icon: Boxes },
   { href: "/products", label: "Catalog", icon: Library },
   { href: "/repricing", label: "Repricing", icon: Tags },
