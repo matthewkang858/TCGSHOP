@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { sql } from "drizzle-orm";
 import { db } from "@/db";
 import { seedDemoData } from "@/db/seed";
+import { runTapeAggregate } from "@/jobs/tape-aggregate";
 import { env } from "@/lib/env";
 
 export const maxDuration = 60;
@@ -36,6 +37,18 @@ async function reseed(request: Request) {
   const started = Date.now();
   try {
     await seedDemoData();
+
+    // Fresh transactions mean a stale tape, and the ops surface reads only
+    // the tape. Failing to rebuild it should not fail the reseed, though -
+    // the store-facing demo is still correct without it.
+    let tape: Record<string, unknown> | { error: string };
+    try {
+      tape = await runTapeAggregate();
+    } catch (e) {
+      console.error("[reseed] tape aggregation failed:", e);
+      tape = { error: e instanceof Error ? e.message : String(e) };
+    }
+
     const [stats] = await db
       .execute<{ lines: number; value: string | null; transactions: number }>(sql`
         select
@@ -50,6 +63,7 @@ async function reseed(request: Request) {
       inventoryLines: stats?.lines ?? 0,
       inventoryValue: stats?.value ? Number(stats.value).toFixed(2) : "0.00",
       transactions: stats?.transactions ?? 0,
+      tape,
     });
   } catch (e) {
     console.error("[reseed] failed:", e);
