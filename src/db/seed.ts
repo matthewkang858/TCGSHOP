@@ -9,6 +9,7 @@
  *  - 30 days of price snapshots + sales stats, then one alert-eval pass so
  *    the dashboard, charts, and alert feed demo instantly
  */
+import { pathToFileURL } from "node:url";
 import { eq, inArray, notInArray, sql } from "drizzle-orm";
 import { db, pool } from "./index";
 import {
@@ -149,7 +150,12 @@ function hasSpike(productId: number): boolean {
   return now / before > 1.2;
 }
 
-async function main() {
+/**
+ * Rebuild the demo store from scratch. Exported so it can run from a server
+ * route too — hosted demos have no terminal. `pnpm seed` passes closePool so
+ * the CLI process can exit; the server route must NOT close the shared pool.
+ */
+export async function seedDemoData({ closePool = false } = {}) {
   console.log("Seeding Countertop demo data…");
   await seedCatalog();
 
@@ -650,10 +656,18 @@ Done! Start the app:
 
 Sign in with ${DEMO_EMAIL} - the magic link prints to the pnpm dev console.
 `);
-  await pool.end();
+  if (closePool) await pool.end();
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+// CLI entry (`pnpm seed`) only — importing this module from a route must not
+// kick off a seed or tear down the shared connection pool.
+const invokedDirectly =
+  process.argv[1] !== undefined &&
+  import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (invokedDirectly) {
+  seedDemoData({ closePool: true }).catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+}
