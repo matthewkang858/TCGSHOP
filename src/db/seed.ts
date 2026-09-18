@@ -1,6 +1,7 @@
 /**
  * `pnpm seed` - demo data so the full loop works immediately, offline:
- *  - demo store + user (magic link logs to console)
+ *  - demo store + user (magic link logs to console), flagged platform admin so
+ *    the cross-store ops surface is reachable
  *  - fixture catalog (Pokemon Base Set - singles + sealed)
  *  - ~60 inventory lines: the holo case across conditions, playables, bulk,
  *    and a small sealed shelf, all with cost bases
@@ -8,6 +9,9 @@
  *  - 3 alerts (pct_change 7d>=20%, Charizard threshold watch, restock on packs)
  *  - 30 days of price snapshots + sales stats, then one alert-eval pass so
  *    the dashboard, charts, and alert feed demo instantly
+ *  - eight more stores that exist only as data contributors, and 60 days of
+ *    counter trades across all nine, so the cross-store tape has a market to
+ *    aggregate instead of one store talking to itself (see ./seed-tape.ts)
  */
 import { pathToFileURL } from "node:url";
 import { eq, inArray, notInArray, sql } from "drizzle-orm";
@@ -39,6 +43,15 @@ import {
   fixtureSalesHistory,
 } from "@/lib/tcgapis/fixtures";
 import { runAlertEval } from "@/jobs/alert-eval";
+import {
+  ADVERSARIAL_STORE,
+  ADVERSARIAL_TARGETS,
+  CONTRIBUTING_STORES,
+  DEMO_STORE_KEY,
+  TAPE_DAYS,
+  generateTapeTransactions,
+  type SeededStore,
+} from "./seed-tape";
 
 const DAY = 86_400_000;
 const DEMO_EMAIL = "demo@countertop.local";
@@ -166,11 +179,38 @@ export async function seedDemoData({ closePool = false } = {}) {
     console.log("✓ removed previous demo store");
   }
 
+  // Same for the tape's contributing stores. Dropping the store cascades its
+  // trades, which is what keeps a second `pnpm seed` from stacking a second
+  // copy of the tape on top of the first.
+  const stale = await db
+    .delete(stores)
+    .where(
+      inArray(
+        stores.name,
+        CONTRIBUTING_STORES.map((s) => s.name)
+      )
+    )
+    .returning({ id: stores.id });
+  if (stale.length > 0) console.log(`✓ removed ${stale.length} previous contributing stores`);
+
   let [user] = await db.select().from(users).where(eq(users.email, DEMO_EMAIL));
   if (!user) {
     [user] = await db
       .insert(users)
-      .values({ email: DEMO_EMAIL, name: "Demo Owner", emailVerified: new Date() })
+      .values({
+        email: DEMO_EMAIL,
+        name: "Demo Owner",
+        emailVerified: new Date(),
+        // the tape is a platform-level dataset; without this the demo cannot
+        // reach the ops surface that shows it
+        platformAdmin: true,
+      })
+      .returning();
+  } else if (!user.platformAdmin) {
+    [user] = await db
+      .update(users)
+      .set({ platformAdmin: true })
+      .where(eq(users.id, user.id))
       .returning();
   }
 
@@ -196,7 +236,13 @@ export async function seedDemoData({ closePool = false } = {}) {
     if (!owner) {
       [owner] = await db
         .insert(users)
-        .values({ email: extraOwner, emailVerified: new Date() })
+        .values({ email: extraOwner, emailVerified: new Date(), platformAdmin: true })
+        .returning();
+    } else if (!owner.platformAdmin) {
+      [owner] = await db
+        .update(users)
+        .set({ platformAdmin: true })
+        .where(eq(users.id, owner.id))
         .returning();
     }
     await db
@@ -613,6 +659,61 @@ export async function seedDemoData({ closePool = false } = {}) {
   await db.insert(transactions).values(txValues);
   console.log(
     `✓ counter ledger: ${txValues.filter((t) => t.side === "sale").length} sales + ${txValues.filter((t) => t.side === "purchase").length} buys over 2 weeks`
+  );
+
+  // --- the tape: the rest of the market ------------------------------------
+  // One store cannot demo a cross-store price dataset: every defense in
+  // src/lib/tape/aggregate.ts needs a bucket with several businesses in it, and
+  // k-anonymity keeps a single-store bucket unpublished on purpose. So the seed
+  // manufactures the market around the demo store - contributing shops that own
+  // no inventory and have no users, just trades. See ./seed-tape.ts for who
+  // they are and which defense each one exercises.
+  const contributors = await db
+    .insert(stores)
+    .values(
+      CONTRIBUTING_STORES.map((s) => ({
+        name: s.name,
+        settings: { tier: "starter" as const, default_rounding: "psychological" as const },
+      }))
+    )
+    .returning({ id: stores.id, name: stores.name });
+  const contributorIdByName = new Map(contributors.map((s) => [s.name, s.id]));
+
+  const tapeStores: SeededStore[] = [
+    // the demo store contributes too - its own counter feeds the same tape
+    { key: DEMO_STORE_KEY, id: store.id, recordedBy: user.id },
+    ...CONTRIBUTING_STORES.map((s) => ({
+      key: s.key,
+      id: contributorIdByName.get(s.name)!,
+      recordedBy: null, // no staff: these stores exist only as data
+    })),
+  ];
+
+  const tapeRows = generateTapeTransactions(tapeStores);
+  // chunked: this runs from a serverless route with maxDuration = 60
+  for (let i = 0; i < tapeRows.length; i += 500) {
+    await db.insert(transactions).values(tapeRows.slice(i, i + 500));
+  }
+
+  const tapeByStore = new Map<string, number>();
+  for (const row of tapeRows) {
+    tapeByStore.set(row.storeId, (tapeByStore.get(row.storeId) ?? 0) + 1);
+  }
+  const attested = tapeRows.filter((t) => t.paymentRef != null).length;
+  console.log(
+    `✓ tape: ${tapeRows.length} trades over ${TAPE_DAYS} days across ${tapeStores.length} stores` +
+      ` — ${attested} card-attested (${Math.round((attested / tapeRows.length) * 100)}% carry a processor charge id)`
+  );
+  console.log(
+    `    ${DEMO_STORE.padEnd(26)} ${String(tapeByStore.get(store.id) ?? 0).padStart(4)}  the store the demo logs into`
+  );
+  for (const s of CONTRIBUTING_STORES) {
+    const n = tapeByStore.get(contributorIdByName.get(s.name)!) ?? 0;
+    console.log(`    ${s.name.padEnd(26)} ${String(n).padStart(4)}  ${s.blurb}`);
+  }
+  console.log(
+    `  ⚠ planted manipulation: ${ADVERSARIAL_STORE.name} reports ~2.5x market, all cash, on ` +
+      `${ADVERSARIAL_TARGETS.join(", ")} — the aggregator should fence those trades out`
   );
 
   // --- fire one evaluation pass so the alert feed demos immediately -----------------
