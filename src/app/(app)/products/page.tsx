@@ -115,8 +115,8 @@ export default async function ProductsPage({
         </form>
       </PageHeader>
 
-      <form method="get" className="mb-4 flex flex-wrap items-end gap-3">
-        <div className="w-44">
+      <form method="get" className="mb-4 grid grid-cols-2 items-end gap-3 sm:flex sm:flex-wrap">
+        <div className="min-w-0 sm:w-44">
           <label className="mb-1 block text-xs font-medium text-muted-foreground">Game</label>
           <Select name="category" defaultValue={params.category ?? ""}>
             <option value="">All games</option>
@@ -127,7 +127,7 @@ export default async function ProductsPage({
             ))}
           </Select>
         </div>
-        <div className="w-56">
+        <div className="min-w-0 sm:w-56">
           <label className="mb-1 block text-xs font-medium text-muted-foreground">
             Expansion
           </label>
@@ -140,7 +140,7 @@ export default async function ProductsPage({
             ))}
           </Select>
         </div>
-        <div className="w-36">
+        <div className="min-w-0 sm:w-36">
           <label className="mb-1 block text-xs font-medium text-muted-foreground">Type</label>
           <Select name="type" defaultValue={params.type ?? ""}>
             <option value="">All types</option>
@@ -149,11 +149,11 @@ export default async function ProductsPage({
             <option value="other">Other</option>
           </Select>
         </div>
-        <div className="w-64">
+        <div className="min-w-0 sm:w-64">
           <label className="mb-1 block text-xs font-medium text-muted-foreground">Search</label>
           <Input name="q" placeholder="Product name…" defaultValue={params.q ?? ""} />
         </div>
-        <Button type="submit" variant="secondary">
+        <Button type="submit" variant="secondary" className="col-span-2 sm:col-auto">
           Filter
         </Button>
       </form>
@@ -171,36 +171,46 @@ export default async function ProductsPage({
               <TableHeader>
                 <TableRow>
                   <TableHead>Product</TableHead>
-                  <TableHead>Game</TableHead>
-                  <TableHead>Expansion</TableHead>
-                  <TableHead>#</TableHead>
-                  <TableHead>Rarity</TableHead>
+                  <TableHead className="hidden md:table-cell">Game</TableHead>
                   <TableHead>Type</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {rows.map((p) => {
                   const type = p.productTypeOverride ?? p.productType;
+                  const meta = [
+                    p.expansionName,
+                    p.number ? `#${p.number}` : null,
+                    p.rarity,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ");
                   return (
                     <TableRow key={p.productId}>
                       <TableCell>
                         <Link
                           href={`/products/${p.productId}`}
-                          className="flex items-center gap-3 font-medium text-primary hover:underline"
+                          className="group flex items-center gap-3"
                         >
                           <ProductImage
                             productId={p.productId}
                             imageUrl={p.imageUrl}
                             name={p.name}
-                            className="h-14 w-10 shrink-0"
+                            className="h-16 w-12 shrink-0 rounded"
                           />
-                          {p.name}
+                          <span className="min-w-0">
+                            <span className="block font-medium text-primary group-hover:underline">
+                              {p.name}
+                            </span>
+                            <span className="mt-0.5 block text-xs text-muted-foreground">
+                              {meta}
+                            </span>
+                          </span>
                         </Link>
                       </TableCell>
-                      <TableCell className="text-muted-foreground">{p.gameName}</TableCell>
-                      <TableCell className="text-muted-foreground">{p.expansionName}</TableCell>
-                      <TableCell className="text-muted-foreground">{p.number ?? "—"}</TableCell>
-                      <TableCell className="text-muted-foreground">{p.rarity ?? "—"}</TableCell>
+                      <TableCell className="hidden text-muted-foreground md:table-cell">
+                        {p.gameName}
+                      </TableCell>
                       <TableCell>
                         <Badge
                           variant={
@@ -219,7 +229,7 @@ export default async function ProductsPage({
                 })}
                 {rows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                    <TableCell colSpan={3} className="py-8 text-center text-muted-foreground">
                       No products match these filters.
                     </TableCell>
                   </TableRow>

@@ -11,6 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { AuthShell } from "./auth-shell";
 import { z } from "zod";
 
 export default async function LoginPage() {
@@ -24,16 +25,12 @@ export default async function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
-      <Card className="w-full max-w-sm">
+    <AuthShell>
+      <Card className="shadow-float">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-lg font-bold text-primary-foreground">
-            C
-          </div>
-          <CardTitle className="text-xl">Countertop</CardTitle>
+          <CardTitle className="text-xl">Sign in</CardTitle>
           <CardDescription>
-            Repricing &amp; price alerts for your game store. Sign in with a
-            magic link.
+            We&apos;ll email you a magic link. No password needed.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -51,12 +48,12 @@ export default async function LoginPage() {
             <Button type="submit" className="w-full">
               Send magic link
             </Button>
-            <p className="text-center text-xs text-muted-foreground">
-              No email configured? The link is printed to the server console.
+            <p className="rounded-md border border-border/60 bg-muted/50 px-3 py-2 text-center text-xs text-muted-foreground">
+              Demo mode: the sign-in link prints to the server console.
             </p>
           </form>
         </CardContent>
       </Card>
-    </div>
+    </AuthShell>
   );
 }

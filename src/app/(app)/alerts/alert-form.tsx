@@ -4,7 +4,13 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { CircleAlert, Loader2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
@@ -101,6 +107,9 @@ export function AlertForm() {
     <Card>
       <CardHeader>
         <CardTitle>New alert</CardTitle>
+        <CardDescription>
+          Evaluated after every price sweep. Pick a trigger, scope it, set a cooldown.
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={submit} className="space-y-4">
@@ -121,7 +130,9 @@ export function AlertForm() {
                   </option>
                 ))}
               </Select>
-              <p className="text-xs text-muted-foreground">{TYPE_INFO[type].hint}</p>
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                {TYPE_INFO[type].hint}
+              </p>
             </div>
             <div className="space-y-1">
               <Label>Name</Label>
@@ -131,6 +142,9 @@ export function AlertForm() {
                 placeholder={TYPE_INFO[type].label}
                 maxLength={120}
               />
+              <p className="text-xs text-muted-foreground">
+                Shown in the feed, email, and Discord.
+              </p>
             </div>
           </div>
 
@@ -143,7 +157,7 @@ export function AlertForm() {
             </div>
           ) : null}
 
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
             {type === "threshold_cross" ? (
               <>
                 <div className="space-y-1">
@@ -162,6 +176,7 @@ export function AlertForm() {
                     type="number"
                     step="0.01"
                     min="0.01"
+                    placeholder="5.00"
                     value={fields.threshold ?? ""}
                     onChange={(e) => set("threshold", e.target.value)}
                     required
@@ -178,6 +193,7 @@ export function AlertForm() {
                     type="number"
                     step="1"
                     min="1"
+                    placeholder="20"
                     value={fields.pct ?? ""}
                     onChange={(e) => set("pct", e.target.value)}
                     required
@@ -207,6 +223,7 @@ export function AlertForm() {
                 <Input
                   type="number"
                   min="1"
+                  placeholder="3"
                   value={fields.min_sales_24h ?? ""}
                   onChange={(e) => set("min_sales_24h", e.target.value)}
                   required
@@ -221,6 +238,7 @@ export function AlertForm() {
                   <Input
                     type="number"
                     min="0"
+                    placeholder="2"
                     value={fields.max_quantity ?? ""}
                     onChange={(e) => set("max_quantity", e.target.value)}
                     required
@@ -231,6 +249,7 @@ export function AlertForm() {
                   <Input
                     type="number"
                     min="1"
+                    placeholder="5"
                     value={fields.min_market_sales_24h ?? ""}
                     onChange={(e) => set("min_market_sales_24h", e.target.value)}
                     required

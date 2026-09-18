@@ -1,10 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, ilike, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { inventoryItems, transactions } from "@/db/schema";
+import { expansions, inventoryItems, products, transactions } from "@/db/schema";
 import { assertMembership, requireStore } from "@/lib/tenancy";
 import { recordTransaction } from "@/lib/transactions/service";
 
@@ -58,6 +58,52 @@ export async function deleteTransactionAction(formData: FormData) {
     .delete(transactions)
     .where(and(eq(transactions.id, id), eq(transactions.storeId, ctx.storeId)));
   revalidatePath("/transactions");
+}
+
+export type ProductHit = {
+  productId: number;
+  name: string;
+  number: string | null;
+  rarity: string | null;
+  imageUrl: string | null;
+  productType: "single" | "sealed" | "other";
+  expansionName: string | null;
+};
+
+/** Catalog search for the counter picker: name match, plus collector number ("25", "#25/102"). */
+export async function searchProductsAction(query: string): Promise<ProductHit[]> {
+  await requireStore();
+  const parsed = z.string().trim().min(2).max(120).safeParse(query);
+  if (!parsed.success) return [];
+  const q = parsed.data;
+  const numberTerm = q.replace(/^#/, "");
+  const res = await db
+    .select({
+      productId: products.productId,
+      name: products.name,
+      number: products.number,
+      rarity: products.rarity,
+      imageUrl: products.imageUrl,
+      productType: products.productType,
+      productTypeOverride: products.productTypeOverride,
+      expansionName: expansions.name,
+    })
+    .from(products)
+    .innerJoin(expansions, eq(expansions.groupId, products.groupId))
+    .where(
+      or(ilike(products.name, `%${q}%`), ilike(products.number, `${numberTerm}%`))
+    )
+    .orderBy(products.name)
+    .limit(20);
+  return res.map((c) => ({
+    productId: c.productId,
+    name: c.name,
+    number: c.number,
+    rarity: c.rarity,
+    imageUrl: c.imageUrl,
+    productType: c.productTypeOverride ?? c.productType,
+    expansionName: c.expansionName,
+  }));
 }
 
 export type PriceSuggestion = {
