@@ -4,13 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { CircleAlert, Loader2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
@@ -107,22 +101,22 @@ export function AlertForm() {
     <Card>
       <CardHeader>
         <CardTitle>New alert</CardTitle>
-        <CardDescription>
-          Evaluated after every price sweep. Pick a trigger, scope it, set a cooldown.
-        </CardDescription>
+        <span className="shrink-0 text-xs text-muted-foreground">
+          runs after every sweep
+        </span>
       </CardHeader>
       <CardContent>
         <form onSubmit={submit} className="space-y-4">
           {error ? (
-            <div className="flex items-center gap-2 rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              <CircleAlert className="h-4 w-4" />
+            <div className="flex items-center gap-2 rounded-md border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              <CircleAlert className="size-4 shrink-0" />
               {error}
             </div>
           ) : null}
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1">
-              <Label>Type</Label>
+              <Label>Trigger</Label>
               <Select value={type} onChange={(e) => setType(e.target.value)}>
                 {Object.entries(TYPE_INFO).map(([value, info]) => (
                   <option key={value} value={value}>
@@ -130,9 +124,6 @@ export function AlertForm() {
                   </option>
                 ))}
               </Select>
-              <p className="text-xs leading-relaxed text-muted-foreground">
-                {TYPE_INFO[type].hint}
-              </p>
             </div>
             <div className="space-y-1">
               <Label>Name</Label>
@@ -142,11 +133,11 @@ export function AlertForm() {
                 placeholder={TYPE_INFO[type].label}
                 maxLength={120}
               />
-              <p className="text-xs text-muted-foreground">
-                Shown in the feed, email, and Discord.
-              </p>
             </div>
           </div>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            {TYPE_INFO[type].hint}
+          </p>
 
           {["threshold_cross", "velocity", "restock_velocity"].includes(type) ? (
             <div className="space-y-1">
@@ -157,7 +148,7 @@ export function AlertForm() {
             </div>
           ) : null}
 
-          <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 items-end gap-3 sm:grid-cols-4">
             {type === "threshold_cross" ? (
               <>
                 <div className="space-y-1">
@@ -171,7 +162,7 @@ export function AlertForm() {
                   </Select>
                 </div>
                 <div className="space-y-1">
-                  <Label>Threshold ($)</Label>
+                  <Label>Threshold $</Label>
                   <Input
                     type="number"
                     step="0.01"
@@ -188,7 +179,7 @@ export function AlertForm() {
             {type === "pct_change" ? (
               <>
                 <div className="space-y-1">
-                  <Label>Move ≥ (%)</Label>
+                  <Label>Move ≥ %</Label>
                   <Input
                     type="number"
                     step="1"
@@ -219,7 +210,7 @@ export function AlertForm() {
 
             {type === "velocity" ? (
               <div className="space-y-1">
-                <Label>Sales in 24h ≥</Label>
+                <Label>Sales/24h ≥</Label>
                 <Input
                   type="number"
                   min="1"
@@ -245,7 +236,7 @@ export function AlertForm() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label>Market sales 24h ≥</Label>
+                  <Label>Market/24h ≥</Label>
                   <Input
                     type="number"
                     min="1"
@@ -259,7 +250,7 @@ export function AlertForm() {
             ) : null}
 
             <div className="space-y-1">
-              <Label>Cooldown (hours)</Label>
+              <Label>Cooldown (h)</Label>
               <Input
                 type="number"
                 min="1"

@@ -45,7 +45,7 @@ export function MobileTabBar({
   return (
     <>
       <nav
-        className="fixed inset-x-0 bottom-0 z-40 border-t bg-card pb-[env(safe-area-inset-bottom)] shadow-float md:hidden"
+        className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card pb-[env(safe-area-inset-bottom)] shadow-float md:hidden"
         aria-label="Primary"
       >
         <div className="flex h-16 items-stretch">
@@ -102,15 +102,15 @@ export function MobileTabBar({
             onClick={() => setMoreOpen(false)}
             aria-hidden
           />
-          <div className="fixed inset-x-0 bottom-0 z-40 rounded-t-xl border bg-card pb-[calc(env(safe-area-inset-bottom)+0.75rem)] shadow-float md:hidden">
-            <div className="flex items-center justify-between border-b px-4 py-3">
-              <p className="truncate text-sm font-medium text-muted-foreground" title={userEmail}>
+          <div className="fixed inset-x-0 bottom-0 z-40 rounded-t-lg border border-border bg-card pb-[calc(env(safe-area-inset-bottom)+0.75rem)] shadow-float md:hidden">
+            <div className="flex h-12 items-center justify-between gap-3 border-b border-border/60 px-4">
+              <p className="truncate text-xs text-muted-foreground" title={userEmail}>
                 {userEmail}
               </p>
               <button
                 type="button"
                 onClick={() => setMoreOpen(false)}
-                className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                className="rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground"
               >
                 <X className="h-4 w-4" />
                 <span className="sr-only">Close</span>
@@ -124,10 +124,10 @@ export function MobileTabBar({
                     key={href}
                     href={href}
                     className={cn(
-                      "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors",
+                      "flex h-11 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors",
                       isActive(href)
-                        ? "bg-accent text-accent-foreground"
-                        : "text-foreground hover:bg-accent"
+                        ? "bg-muted text-primary"
+                        : "text-foreground hover:bg-muted"
                     )}
                   >
                     <Icon className="h-4 w-4" />
@@ -138,7 +138,7 @@ export function MobileTabBar({
               <form action={signOutAction}>
                 <button
                   type="submit"
-                  className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  className="flex h-11 w-full items-center gap-3 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
                   <LogOut className="h-4 w-4" />
                   Sign out

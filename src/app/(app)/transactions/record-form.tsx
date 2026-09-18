@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, CircleAlert, Loader2, ScanLine } from "lucide-react";
+import { CheckCircle2, CircleAlert, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -142,58 +142,46 @@ export function RecordForm({
     }
   }
 
+  const priceLabel = side === "sale" ? "Sold at ($ each)" : "Paid ($ each)";
+
   return (
     <Card>
-      <CardHeader className="flex-row items-center justify-between space-y-0">
+      <CardHeader>
         <CardTitle>Record a transaction</CardTitle>
-        <span className="flex items-center gap-1 text-xs text-muted-foreground">
-          <ScanLine className="h-3.5 w-3.5" />
+        <span className="hidden shrink-0 text-xs text-muted-foreground sm:block">
           camera scanning coming soon — search works today
         </span>
       </CardHeader>
       <CardContent>
         <form onSubmit={submit} className="space-y-4">
           {error ? (
-            <div className="flex items-center gap-2 rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              <CircleAlert className="h-4 w-4" />
+            <div className="flex items-center gap-2 rounded-md border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              <CircleAlert className="size-4 shrink-0" />
               {error}
             </div>
           ) : null}
           {flash ? (
-            <div className="flex items-center gap-2 rounded-md border border-success/50 bg-success/10 px-3 py-2 text-sm text-success">
-              <CheckCircle2 className="h-4 w-4" />
+            <div className="flex items-center gap-2 rounded-md border border-success/25 bg-success/10 px-3 py-2 text-sm text-success">
+              <CheckCircle2 className="size-4 shrink-0" />
               {flash}
             </div>
           ) : null}
 
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              variant={side === "sale" ? "default" : "outline"}
-              className={cn("flex-1", side === "sale" && "bg-success hover:bg-success")}
-              onClick={() => setSide("sale")}
-            >
-              Sold a card
-            </Button>
-            <Button
-              type="button"
-              variant={side === "purchase" ? "default" : "outline"}
-              className="flex-1"
-              onClick={() => setSide("purchase")}
-            >
-              Bought a card
-            </Button>
-          </div>
-
-          <div className="space-y-1">
-            <Label>Product</Label>
+          {/* 1 — what kind of entry, and what card */}
+          <div className="space-y-1.5">
+            <SideToggle side={side} onChange={setSide} />
             <ProductPicker value={product} onChange={onPick} autoFocus />
           </div>
 
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <div className="space-y-1">
-              <Label>Condition</Label>
-              <Select value={condition} onChange={(e) => setCondition(e.target.value)}>
+          {/* 2 — how it grades and how many */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="record-condition">Condition</Label>
+              <Select
+                id="record-condition"
+                value={condition}
+                onChange={(e) => setCondition(e.target.value)}
+              >
                 {CONDITIONS.map((c) => (
                   <option key={c} value={c}>
                     {c}
@@ -201,9 +189,10 @@ export function RecordForm({
                 ))}
               </Select>
             </div>
-            <div className="space-y-1">
-              <Label>Printing</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="record-printing">Printing</Label>
               <Select
+                id="record-printing"
                 value={printing}
                 onChange={(e) => setPrinting(e.target.value as "" | "Normal" | "Foil")}
               >
@@ -212,65 +201,127 @@ export function RecordForm({
                 <option value="Foil">Foil</option>
               </Select>
             </div>
-            <div className="space-y-1">
-              <Label>Qty</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="record-qty">Qty</Label>
               <Input
+                id="record-qty"
                 type="number"
                 min={1}
                 value={quantity}
                 onChange={(e) => setQuantity(e.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-1">
-              <Label>{side === "sale" ? "Sold at ($ each)" : "Paid ($ each)"}</Label>
-              <Input
-                ref={priceRef}
-                type="number"
-                step="0.01"
-                min="0.01"
-                value={price}
-                onChange={(e) => setPrice(e.target.value)}
+                className="tabular-nums"
                 required
               />
             </div>
           </div>
 
-          {suggesting ? (
-            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Loader2 className="h-3 w-3 animate-spin" />
-              looking up your shelf price…
-            </p>
-          ) : suggestion ? (
-            <p className="text-xs text-muted-foreground">
-              {suggestion.stickerPrice != null
-                ? `Shelf sticker: $${suggestion.stickerPrice.toFixed(2)} · `
-                : ""}
-              {suggestion.currentPrice != null
-                ? `Your price: $${suggestion.currentPrice.toFixed(2)} · `
-                : ""}
-              {suggestion.marketPrice != null
-                ? `TCG market: $${suggestion.marketPrice.toFixed(2)}`
-                : "no market snapshot yet"}
-            </p>
-          ) : null}
-
-          <div className="flex items-center justify-between gap-3">
-            <label className="flex items-center gap-2 text-sm">
+          {/* 3 — the money, and the one action that closes the sale */}
+          <div className="rounded-md border border-border/60 bg-surface-subtle p-3">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+              <Label htmlFor="record-price">{priceLabel}</Label>
+              {suggesting ? (
+                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Loader2 className="size-3 animate-spin" />
+                  looking up your shelf price…
+                </span>
+              ) : suggestion ? (
+                <span className="text-xs tabular-nums text-muted-foreground">
+                  {[
+                    suggestion.stickerPrice != null
+                      ? `Shelf sticker ${formatMoney(suggestion.stickerPrice)}`
+                      : null,
+                    suggestion.currentPrice != null
+                      ? `Your price ${formatMoney(suggestion.currentPrice)}`
+                      : null,
+                    suggestion.marketPrice != null
+                      ? `TCG market ${formatMoney(suggestion.marketPrice)}`
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ") || "no market snapshot yet"}
+                </span>
+              ) : null}
+            </div>
+            <div className="mt-1.5 flex flex-col gap-2 sm:flex-row sm:items-center">
+              <div className="relative flex-1">
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                  $
+                </span>
+                <Input
+                  id="record-price"
+                  ref={priceRef}
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  value={price}
+                  onChange={(e) => setPrice(e.target.value)}
+                  className="h-12 pl-7 font-medium tabular-nums md:h-12"
+                  required
+                />
+              </div>
+              <Button
+                type="submit"
+                size="lg"
+                className="h-12 sm:w-40"
+                disabled={busy || !product}
+              >
+                {busy ? <Loader2 className="animate-spin" /> : null}
+                Record {side === "sale" ? "sale" : "buy"}
+              </Button>
+            </div>
+            <label className="mt-2.5 flex items-center gap-2 text-xs text-muted-foreground">
               <input
                 type="checkbox"
                 checked={adjustInventory}
                 onChange={(e) => setAdjustInventory(e.target.checked)}
+                className="size-4 accent-primary"
               />
               {side === "sale" ? "Deduct from inventory" : "Add to inventory (records cost)"}
             </label>
-            <Button type="submit" disabled={busy || !product}>
-              {busy ? <Loader2 className="animate-spin" /> : null}
-              Record {side === "sale" ? "sale" : "buy"}
-            </Button>
           </div>
         </form>
       </CardContent>
     </Card>
+  );
+}
+
+/** Sale/Buy is a mode, not two competing actions — so it is one segmented control. */
+function SideToggle({
+  side,
+  onChange,
+}: {
+  side: "sale" | "purchase";
+  onChange: (s: "sale" | "purchase") => void;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label="Transaction type"
+      className="inline-flex h-11 w-full max-w-[320px] items-center rounded-md border border-input bg-muted/60 p-1 md:h-9"
+    >
+      {(
+        [
+          { key: "sale", label: "Sold a card" },
+          { key: "purchase", label: "Bought a card" },
+        ] as const
+      ).map((opt) => (
+        <button
+          key={opt.key}
+          type="button"
+          aria-pressed={side === opt.key}
+          onClick={() => onChange(opt.key)}
+          className={cn(
+            "h-full flex-1 rounded-[5px] text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
+            side === opt.key
+              ? "border border-border bg-card text-foreground"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
   );
 }

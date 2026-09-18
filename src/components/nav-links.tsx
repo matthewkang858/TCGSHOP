@@ -35,13 +35,13 @@ export function NavLinks() {
             key={href}
             href={href}
             className={cn(
-              "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+              "flex h-9 items-center gap-2.5 rounded-md px-3 text-sm font-medium transition-colors",
               active
-                ? "bg-primary text-primary-foreground shadow-card"
+                ? "bg-primary text-primary-foreground"
                 : "text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground"
             )}
           >
-            <Icon className="h-4 w-4" />
+            <Icon className="size-4 shrink-0" />
             {label}
           </Link>
         );

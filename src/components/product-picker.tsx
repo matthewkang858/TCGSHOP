@@ -2,8 +2,10 @@
 
 import * as React from "react";
 import { Loader2, Search } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { dataRowThumbClass } from "@/components/ui/data-row";
 import { ProductImage } from "@/components/product-image";
 import {
   searchProductsAction,
@@ -73,11 +75,37 @@ export function ProductPicker({
   }
 
   if (value) {
+    const [name, ...rest] = value.label.split(" · ");
     return (
-      <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
-        <span className="flex-1 truncate">{value.label}</span>
-        <Button variant="ghost" size="sm" onClick={() => onChange(null)} type="button">
-          change
+      <div className="flex h-14 items-center gap-3 rounded-md border border-input bg-card px-3">
+        <ProductImage
+          productId={value.id}
+          name={name}
+          className={`${dataRowThumbClass} shrink-0`}
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center">
+            <span className="truncate text-sm font-medium text-foreground">{name}</span>
+            {value.productType === "sealed" ? (
+              <Badge variant="neutral" className="ml-2 shrink-0">
+                sealed
+              </Badge>
+            ) : null}
+          </div>
+          {rest.length > 0 ? (
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+              {rest.join(" · ")}
+            </p>
+          ) : null}
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => onChange(null)}
+          type="button"
+          className="shrink-0 text-muted-foreground"
+        >
+          Change
         </Button>
       </div>
     );
@@ -86,7 +114,7 @@ export function ProductPicker({
   return (
     <div className="space-y-2">
       <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           value={query}
           autoFocus={autoFocus}
@@ -102,36 +130,46 @@ export function ProductPicker({
           }}
         />
         {searching ? (
-          <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+          <Loader2 className="absolute right-3 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />
         ) : null}
       </div>
       {searching && results.length === 0 ? (
-        <p className="px-1 text-sm text-muted-foreground">Searching…</p>
+        <p className="px-1 text-xs text-muted-foreground">Searching…</p>
       ) : null}
       {!searching && searched && results.length === 0 ? (
-        <p className="px-1 text-sm text-muted-foreground">No matches</p>
+        <p className="px-1 text-xs text-muted-foreground">No matches</p>
       ) : null}
       {results.length > 0 ? (
-        <div className="max-h-60 overflow-y-auto rounded-md border">
+        // Four rows visible at the shared 64px rhythm, the rest scroll.
+        <div className="max-h-64 overflow-y-auto rounded-md border border-border/60">
           {results.map((r) => (
             <button
               key={r.productId}
               type="button"
-              className="flex w-full items-center gap-3 border-b px-3 py-2 text-left text-sm last:border-0 hover:bg-accent"
+              className="flex h-16 w-full items-center gap-3 border-b border-border/60 px-3 text-left transition-colors last:border-0 hover:bg-muted/40"
               onClick={() => pick(r)}
             >
               <ProductImage
                 productId={r.productId}
                 imageUrl={r.imageUrl}
                 name={r.name}
-                className="h-12 w-9 shrink-0"
+                className={`${dataRowThumbClass} shrink-0`}
               />
-              <span className="min-w-0">
-                <span className="block truncate">{r.name}</span>
-                <span className="block truncate text-xs text-muted-foreground">
-                  {r.number ? `#${r.number} · ` : ""}
-                  {r.expansionName ?? ""}
-                  {r.productType === "sealed" ? " · sealed" : ""}
+              <span className="min-w-0 flex-1">
+                <span className="flex min-w-0 items-center">
+                  <span className="truncate text-sm font-medium text-foreground">
+                    {r.name}
+                  </span>
+                  {r.productType === "sealed" ? (
+                    <Badge variant="neutral" className="ml-2 shrink-0">
+                      sealed
+                    </Badge>
+                  ) : null}
+                </span>
+                <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                  {[r.number ? `#${r.number}` : null, r.expansionName, r.rarity]
+                    .filter(Boolean)
+                    .join(" · ")}
                 </span>
               </span>
             </button>

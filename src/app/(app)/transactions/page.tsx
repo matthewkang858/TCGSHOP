@@ -8,8 +8,9 @@ import { expansions, products, transactions } from "@/db/schema";
 import { requireStore } from "@/lib/tenancy";
 import { EmptyState, PageHeader } from "@/components/page-header";
 import { ProductImage } from "@/components/product-image";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DataRow, dataRowThumbClass } from "@/components/ui/data-row";
+import { Section } from "@/components/ui/section";
+import { StatCard } from "@/components/ui/stat-card";
 import {
   Table,
   TableBody,
@@ -91,6 +92,16 @@ function dayLabel(d: Date, now: Date): string {
   return formatDate(d);
 }
 
+/** "1 × Near Mint · Foil" — condition, printing and qty are one fact, not three columns. */
+function lineDetail(t: {
+  quantity: number;
+  condition: string | null;
+  printing: string | null;
+}): string {
+  const detail = `${t.quantity} × ${t.condition ?? "—"}`;
+  return t.printing === "Foil" ? `${detail} · Foil` : detail;
+}
+
 export default async function TransactionsPage({
   searchParams,
 }: {
@@ -149,23 +160,15 @@ export default async function TransactionsPage({
     else groups.push({ label, rows: [t] });
   }
 
+  const revenue7d = Number(stats?.revenue_7d ?? 0);
+  const spend7d = Number(stats?.spend_7d ?? 0);
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Transactions"
-        description="Every counter sale and buy, recorded in seconds. This ledger is the realized-price data the whole platform builds on."
+        description={`${rows.length} recent ${rows.length === 1 ? "entry" : "entries"} · ${formatMoney(revenue7d)} in · ${formatMoney(spend7d)} out over 7 days`}
       />
-
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Sales today" value={String(stats?.sales_today ?? 0)} sub={formatMoney(stats?.revenue_today ?? 0)} />
-        <StatCard label="Sales · 7 days" value={String(stats?.sales_7d ?? 0)} sub={formatMoney(stats?.revenue_7d ?? 0)} />
-        <StatCard label="Buys · 7 days" value={String(stats?.buys_7d ?? 0)} sub={`${formatMoney(stats?.spend_7d ?? 0)} paid out`} />
-        <StatCard
-          label="Net · 7 days"
-          value={formatMoney(Number(stats?.revenue_7d ?? 0) - Number(stats?.spend_7d ?? 0))}
-          sub="revenue − buylist spend"
-        />
-      </div>
 
       <RecordForm
         initialPick={prefill.initialPick}
@@ -174,128 +177,172 @@ export default async function TransactionsPage({
         initialPrinting={prefill.printing}
       />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Ledger</CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          {rows.length === 0 ? (
-            <div className="p-6">
-              <EmptyState
-                icon={<Receipt className="h-8 w-8" />}
-                title="No transactions yet"
-                description="Record your first sale or buy above. Each entry updates inventory and builds your store's realized-price history."
-              />
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>When</TableHead>
-                  <TableHead>Product</TableHead>
-                  <TableHead className="hidden md:table-cell">Condition</TableHead>
-                  <TableHead className="hidden text-right sm:table-cell">Qty</TableHead>
-                  <TableHead className="hidden text-right sm:table-cell">Each</TableHead>
-                  <TableHead className="text-right">Total</TableHead>
-                  <TableHead></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {groups.map((g) => (
-                  <React.Fragment key={g.label}>
-                    <TableRow className="bg-muted/40 hover:bg-muted/40">
-                      <TableCell
-                        colSpan={7}
-                        className="py-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground"
-                      >
-                        {g.label}
-                      </TableCell>
-                    </TableRow>
-                    {g.rows.map((t) => (
-                      <TableRow key={t.id}>
-                        <TableCell className="whitespace-nowrap text-muted-foreground">
-                          {formatTime(t.occurredAt)}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
+        <StatCard
+          label="Sales today"
+          value={String(stats?.sales_today ?? 0)}
+          sub={formatMoney(stats?.revenue_today ?? 0)}
+        />
+        <StatCard
+          label="Sales · 7 days"
+          value={String(stats?.sales_7d ?? 0)}
+          sub={formatMoney(revenue7d)}
+        />
+        <StatCard
+          label="Buys · 7 days"
+          value={String(stats?.buys_7d ?? 0)}
+          sub={`${formatMoney(spend7d)} paid out`}
+        />
+        <StatCard
+          label="Net · 7 days"
+          value={formatMoney(revenue7d - spend7d)}
+          sub="revenue − buylist spend"
+        />
+      </div>
+
+      <Section title="Ledger" subtitle={rows.length > 0 ? String(rows.length) : undefined}>
+        {rows.length === 0 ? (
+          <div className="p-4">
+            <EmptyState
+              icon={<Receipt />}
+              title="No transactions yet"
+              description="Record your first sale or buy above. Each entry updates inventory and builds your store's realized-price history."
+            />
+          </div>
+        ) : (
+          <>
+            {/* Desktop: fixed-rhythm table. */}
+            <div className="hidden md:block">
+              <Table>
+                <colgroup>
+                  <col className="w-[14%]" />
+                  <col className="w-[44%]" />
+                  <col className="w-[20%]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[56px]" />
+                </colgroup>
+                <TableHeader>
+                  <TableRow className="h-9 hover:bg-transparent">
+                    <TableHead>When</TableHead>
+                    <TableHead>Product</TableHead>
+                    <TableHead>Qty · condition</TableHead>
+                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead>
+                      <span className="sr-only">Actions</span>
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {groups.map((g) => (
+                    <React.Fragment key={g.label}>
+                      <TableRow className="h-8 bg-surface-subtle hover:bg-surface-subtle">
+                        <TableCell
+                          colSpan={5}
+                          className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground"
+                        >
+                          {g.label}
                         </TableCell>
-                        <TableCell>
-                          <div className="flex min-w-0 items-center gap-3">
-                            <ProductImage
-                              productId={t.productId}
-                              imageUrl={t.productImageUrl}
-                              name={t.productName}
-                              className="h-14 w-10 shrink-0"
-                            />
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2">
+                      </TableRow>
+                      {g.rows.map((t) => (
+                        <TableRow key={t.id}>
+                          <TableCell className="text-xs tabular-nums text-muted-foreground">
+                            {formatTime(t.occurredAt)}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex min-w-0 items-center gap-3">
+                              <ProductImage
+                                productId={t.productId}
+                                imageUrl={t.productImageUrl}
+                                name={t.productName}
+                                className="h-10 w-[29px] shrink-0 rounded-[3px] border-border/70 bg-muted"
+                              />
+                              <div className="min-w-0">
                                 <Link
                                   href={`/products/${t.productId}`}
-                                  className="truncate font-medium text-primary hover:underline"
+                                  className="block truncate text-sm font-medium text-foreground hover:underline"
+                                  title={t.productName}
                                 >
                                   {t.productName}
                                 </Link>
-                                <Badge
-                                  variant={t.side === "sale" ? "success" : "secondary"}
-                                  className="hidden shrink-0 sm:inline-flex"
-                                >
-                                  {t.side === "sale" ? "sold" : "bought"}
-                                </Badge>
+                                <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                                  {t.expansionName}
+                                </p>
                               </div>
-                              <p className="truncate text-xs text-muted-foreground">
-                                {t.expansionName}
-                                <span className="sm:hidden">
-                                  {" · "}
-                                  {t.quantity} × {formatMoney(t.unitPrice)} · {t.condition}
-                                  {t.printing === "Foil" ? " · foil" : ""}
-                                </span>
-                              </p>
                             </div>
-                          </div>
-                        </TableCell>
-                        <TableCell className="hidden text-muted-foreground md:table-cell">
-                          {t.condition}
-                          {t.printing === "Foil" ? " · foil" : ""}
-                        </TableCell>
-                        <TableCell className="hidden text-right tabular-nums sm:table-cell">
-                          {t.quantity}
-                        </TableCell>
-                        <TableCell className="hidden text-right tabular-nums sm:table-cell">
-                          {formatMoney(t.unitPrice)}
-                        </TableCell>
-                        <TableCell
-                          className={cn(
-                            "text-right font-medium tabular-nums",
-                            t.side === "sale" ? "text-success" : ""
-                          )}
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            <span className="block truncate">{lineDetail(t)}</span>
+                          </TableCell>
+                          <TableCell
+                            className={cn(
+                              "text-right text-sm font-medium tabular-nums",
+                              t.side === "sale" ? "text-success" : "text-destructive"
+                            )}
+                          >
+                            {t.side === "sale" ? "+" : "−"}
+                            {formatMoney(Number(t.unitPrice) * t.quantity)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end transition-opacity md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
+                              <DeleteTransactionButton
+                                id={t.id}
+                                label={`${t.quantity} × ${formatMoney(t.unitPrice)} ${t.productName}`}
+                              />
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </React.Fragment>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+
+            {/* Phone: the shared 64px list row, never a sideways table. */}
+            <div className="md:hidden">
+              {groups.map((g) => (
+                <React.Fragment key={g.label}>
+                  <div className="flex h-8 items-center border-b border-border/60 bg-surface-subtle px-4 text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+                    {g.label}
+                  </div>
+                  {g.rows.map((t) => (
+                    <DataRow
+                      key={t.id}
+                      href={`/products/${t.productId}`}
+                      image={
+                        <ProductImage
+                          productId={t.productId}
+                          imageUrl={t.productImageUrl}
+                          name={t.productName}
+                          className={dataRowThumbClass}
+                        />
+                      }
+                      title={t.productName}
+                      meta={`${formatTime(t.occurredAt)} · ${t.expansionName} · ${lineDetail(t)}`}
+                      value={
+                        <span
+                          className={
+                            t.side === "sale" ? "text-success" : "text-destructive"
+                          }
                         >
                           {t.side === "sale" ? "+" : "−"}
                           {formatMoney(Number(t.unitPrice) * t.quantity)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <DeleteTransactionButton
-                            id={t.id}
-                            label={`${t.quantity} × ${formatMoney(t.unitPrice)} ${t.productName}`}
-                          />
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </React.Fragment>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+                        </span>
+                      }
+                      actions={
+                        <DeleteTransactionButton
+                          id={t.id}
+                          label={`${t.quantity} × ${formatMoney(t.unitPrice)} ${t.productName}`}
+                        />
+                      }
+                    />
+                  ))}
+                </React.Fragment>
+              ))}
+            </div>
+          </>
+        )}
+      </Section>
     </div>
-  );
-}
-
-function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
-  return (
-    <Card>
-      <CardContent className="pt-6">
-        <p className="text-sm text-muted-foreground">{label}</p>
-        <p className="mt-1 text-2xl font-semibold tabular-nums">{value}</p>
-        {sub ? <p className="mt-1 text-xs text-muted-foreground">{sub}</p> : null}
-      </CardContent>
-    </Card>
   );
 }

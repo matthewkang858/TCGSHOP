@@ -1,5 +1,7 @@
+import Link from "next/link";
 import { requireStore } from "@/lib/tenancy";
 import { PageHeader } from "@/components/page-header";
+import { Button } from "@/components/ui/button";
 import { ImportWizard } from "./wizard";
 
 export default async function ImportPage() {
@@ -8,8 +10,12 @@ export default async function ImportPage() {
     <div>
       <PageHeader
         title="Import inventory"
-        description="Upload a CSV, map its columns, review the catalog matches, and commit. Re-imports update existing lines."
-      />
+        description="CSV · TCGplayer exports auto-detected · re-imports update lines, never duplicate them"
+      >
+        <Button asChild variant="outline">
+          <Link href="/inventory">Back to inventory</Link>
+        </Button>
+      </PageHeader>
       <ImportWizard />
     </div>
   );

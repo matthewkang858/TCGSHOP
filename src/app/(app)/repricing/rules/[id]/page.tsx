@@ -26,7 +26,10 @@ export default async function EditRulePage({
 
   return (
     <div>
-      <PageHeader title={`Edit rule: ${rule.name}`} />
+      <PageHeader
+        title="Edit rule"
+        description={`${rule.name} · priority ${rule.priority} · ${rule.active ? "active" : "inactive"}`}
+      />
       <RuleForm rule={rule} action={boundUpdate} />
     </div>
   );

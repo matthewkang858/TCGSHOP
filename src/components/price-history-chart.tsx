@@ -11,6 +11,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { EmptyState } from "@/components/page-header";
 
 export type PricePoint = {
   date: string; // yyyy-mm-dd
@@ -37,76 +38,103 @@ const fmtLabel = (d: string) =>
     year: "numeric",
   });
 
+const tickStyle = {
+  fontSize: 11,
+  fill: "var(--muted-foreground)",
+  fontVariantNumeric: "tabular-nums",
+} as const;
+
 export function PriceHistoryChart({ data }: { data: PricePoint[] }) {
   const hasBuylist = data.some((p) => p.buylist != null);
   if (data.length === 0) {
     return (
-      <div className="flex h-64 flex-col items-center justify-center gap-2 rounded-md border border-dashed text-center">
-        <ChartLine className="h-7 w-7 text-muted-foreground/60" />
-        <p className="text-sm font-medium">No price history yet</p>
-        <p className="max-w-xs text-xs text-muted-foreground">
-          Snapshots appear here after the first price sweep runs.
-        </p>
-      </div>
+      <EmptyState
+        icon={<ChartLine />}
+        title="No price history yet"
+        description="Snapshots appear here after the first price sweep runs."
+      />
     );
   }
+  // Thin the date ticks so labels never collide or rotate at phone width.
+  const tickGap = Math.max(1, Math.ceil(data.length / 6));
   return (
-    <ResponsiveContainer width="100%" height={280}>
-      <LineChart data={data} margin={{ top: 8, right: 16, bottom: 0, left: 8 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-        <XAxis
-          dataKey="date"
-          tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
-          tickFormatter={(d: string) => d.slice(5)}
-          stroke="var(--border)"
-          tickLine={false}
-        />
-        <YAxis
-          tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
-          tickFormatter={fmtTick}
-          stroke="var(--border)"
-          tickLine={false}
-          width={64}
-          domain={["auto", "auto"]}
-        />
-        <Tooltip
-          formatter={(value) => (typeof value === "number" ? fmtMoney(value) : String(value))}
-          labelFormatter={(label) => (typeof label === "string" ? fmtLabel(label) : label)}
-          contentStyle={{
-            background: "var(--card)",
-            border: "1px solid var(--border)",
-            borderRadius: 8,
-            fontSize: 12,
-            color: "var(--foreground)",
-            boxShadow: "0 4px 12px rgb(0 0 0 / 0.08)",
-          }}
-          labelStyle={{ color: "var(--muted-foreground)", marginBottom: 4 }}
-          cursor={{ stroke: "var(--border)" }}
-        />
-        <Legend wrapperStyle={{ fontSize: 12 }} iconType="plainline" />
-        <Line
-          type="monotone"
-          dataKey="market"
-          name="TCG Market"
-          stroke="var(--primary)"
-          strokeWidth={2}
-          dot={false}
-          activeDot={{ r: 3, stroke: "var(--card)", strokeWidth: 1 }}
-          connectNulls
-        />
-        {hasBuylist ? (
+    <div className="h-56 w-full md:h-64">
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+          <CartesianGrid
+            stroke="var(--border)"
+            strokeOpacity={0.2}
+            vertical={false}
+          />
+          <XAxis
+            dataKey="date"
+            tick={tickStyle}
+            tickFormatter={(d: string) => d.slice(5)}
+            interval={tickGap - 1}
+            axisLine={{ stroke: "var(--border)" }}
+            tickLine={false}
+            tickMargin={8}
+            minTickGap={16}
+          />
+          <YAxis
+            tick={tickStyle}
+            tickFormatter={fmtTick}
+            axisLine={false}
+            tickLine={false}
+            width={56}
+            domain={["auto", "auto"]}
+          />
+          <Tooltip
+            formatter={(value) =>
+              typeof value === "number" ? fmtMoney(value) : String(value)
+            }
+            labelFormatter={(label) => (typeof label === "string" ? fmtLabel(label) : label)}
+            contentStyle={{
+              background: "var(--card)",
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+              fontSize: 12,
+              color: "var(--foreground)",
+              boxShadow: "var(--shadow-float)",
+            }}
+            labelStyle={{ color: "var(--muted-foreground)", marginBottom: 4 }}
+            cursor={{ stroke: "var(--border-strong)" }}
+          />
+          {/* One series needs no legend - the card title already says what it is. */}
+          {hasBuylist ? (
+            <Legend
+              verticalAlign="top"
+              align="right"
+              height={20}
+              iconType="plainline"
+              iconSize={10}
+              wrapperStyle={{ fontSize: 11, color: "var(--muted-foreground)" }}
+            />
+          ) : null}
           <Line
             type="monotone"
-            dataKey="buylist"
-            name="CK Buylist"
-            stroke="var(--success)"
-            strokeWidth={2}
+            dataKey="market"
+            name="TCG market"
+            stroke="var(--primary)"
+            strokeWidth={1.75}
             dot={false}
             activeDot={{ r: 3, stroke: "var(--card)", strokeWidth: 1 }}
             connectNulls
           />
-        ) : null}
-      </LineChart>
-    </ResponsiveContainer>
+          {hasBuylist ? (
+            <Line
+              type="monotone"
+              dataKey="buylist"
+              name="CK buylist"
+              stroke="var(--success)"
+              strokeWidth={1.75}
+              dot={false}
+              activeDot={{ r: 3, stroke: "var(--card)", strokeWidth: 1 }}
+              connectNulls
+            />
+          ) : null}
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
   );
 }

@@ -137,7 +137,6 @@ const BASE_SET_SEALED: string[] = [
   "Base Set Overgrowth Theme Deck",
   "Base Set Zap Theme Deck",
   "Base Set 2-Player Starter Set",
-  "Base Set Booster Display Case",
 ];
 
 function cleanName(name: string) {

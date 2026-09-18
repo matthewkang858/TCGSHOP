@@ -13,26 +13,29 @@
   --secondary: hsl(228 18% 91%);
   --secondary-hover: hsl(228 18% 85%);
   --secondary-foreground: hsl(230 18% 20%);
-  --muted: hsl(228 18% 92%);
-  --muted-foreground: hsl(230 10% 42%);
+  --muted: hsl(228 20% 95%);
+  --muted-foreground: hsl(230 9% 45%);
   --accent: hsl(240 45% 94%);
   --accent-foreground: hsl(242 45% 28%);
-  --destructive: hsl(0 72% 44%);
+  --destructive: hsl(0 65% 46%);
   --destructive-hover: hsl(0 72% 36%);
   --destructive-foreground: hsl(0 0% 100%);
   --success: hsl(150 62% 30%);
   --success-foreground: hsl(150 65% 20%);
   --warning: hsl(36 92% 38%);
   --warning-foreground: hsl(33 95% 25%);
-  --border: hsl(228 15% 87%);
-  --input: hsl(228 15% 84%);
+  --border: hsl(228 16% 90%);
+  --border-strong: hsl(228 16% 84%);
+  --input: hsl(228 15% 86%);
   --ring: hsl(242 58% 48%);
+  --surface-subtle: hsl(228 28% 98%);
+  --content-max: 1360px;
   --sidebar: hsl(240 42% 14%);
   --sidebar-foreground: hsl(228 32% 96%);
   --sidebar-muted: hsl(233 22% 68%);
   --sidebar-border: hsl(239 32% 23%);
   --sidebar-accent: hsl(240 36% 22%);
-  --radius: 0.625rem;
+  --radius: 0.5rem;
 }
 
 @theme inline {
@@ -60,6 +63,8 @@
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-surface-subtle: var(--surface-subtle);
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-sidebar: var(--sidebar);
@@ -70,8 +75,8 @@
   --radius-sm: calc(var(--radius) - 2px);
   --radius-md: var(--radius);
   --radius-lg: calc(var(--radius) + 4px);
-  --shadow-card: 0 1px 2px hsl(240 40% 20% / 0.06), 0 1px 3px hsl(240 40% 20% / 0.08);
-  --shadow-float: 0 4px 12px hsl(240 40% 20% / 0.1), 0 12px 32px hsl(240 40% 20% / 0.14);
+  --shadow-card: 0 1px 1px hsl(240 30% 20% / 0.03);
+  --shadow-float: 0 8px 24px hsl(240 40% 20% / 0.12), 0 2px 6px hsl(240 40% 20% / 0.08);
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, sans-serif;
 }
@@ -84,4 +89,19 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans);
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.005em;
+}
+
+table {
+  border-collapse: separate;
+  border-spacing: 0;
 }

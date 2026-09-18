@@ -33,20 +33,54 @@ function rand01(productId: number, salt: number): number {
 
 // --- base price model ------------------------------------------------------
 
-const SEALED_BASE: Array<[RegExp, number]> = [
-  [/booster display case/i, 4200],
-  [/booster box|booster display/i, 520],
-  [/collector booster display/i, 240],
+/**
+ * Anchored market values, in USD, for raw Near Mint Base Set UNLIMITED — the
+ * printing this fixture catalog describes (no "Shadowless"/"1st Edition" rows
+ * exist here, so the four-figure Charizard comps do not apply).
+ *
+ * The iconic holos are listed card by card because the store's value ranking
+ * has to read correctly to anyone who knows the set: Charizard on top, the
+ * starter evolutions next, Machamp at the bottom of the holo run. Everything
+ * else falls back to the deterministic rarity bands below, so the long tail
+ * stays hash-driven and the catalog can grow without another table.
+ */
+const SINGLE_ANCHORS: Record<string, number> = {
+  Charizard: 350,
+  Blastoise: 130,
+  Venusaur: 120,
+  Raichu: 70,
+  Chansey: 60,
+  Mewtwo: 60,
+  Zapdos: 55,
+  Alakazam: 45,
+  Gyarados: 45,
+  Nidoking: 45,
+  Ninetales: 45,
+  Clefairy: 40,
+  Hitmonchan: 40,
+  Poliwrath: 35,
+  Magneton: 30,
+  Machamp: 25,
+};
+
+/** Order matters: "booster box" must win before the looser "booster pack". */
+const SEALED_ANCHORS: Array<[RegExp, number]> = [
+  [/booster box|booster display/i, 5500],
   [/collector booster pack/i, 22],
-  [/booster pack/i, 5.5],
+  [/booster pack/i, 180],
+  [/starter set|starter deck|2-player/i, 300],
+  [/theme deck/i, 190],
+  [/elite trainer box/i, 60],
   [/bundle/i, 42],
   [/commander deck/i, 48],
   [/prerelease/i, 28],
-  [/theme deck|starter/i, 180],
 ];
 
-function isSealedName(name: string) {
-  return SEALED_BASE.some(([re]) => re.test(name));
+/** Basic energy is worth its own line; it never tracks the common band. */
+const BASIC_ENERGY = /^(Fighting|Fire|Grass|Lightning|Psychic|Water) Energy$/;
+
+function sealedAnchor(name: string): number | null {
+  return SEALED_ANCHORS.find(([re]) => re.test(name))?.[1] ?? null;
 }
 
 export function fixtureBasePrice(productId: number): number {
@@ -54,24 +88,29 @@ export function fixtureBasePrice(productId: number): number {
   const r = rand01(productId, 1);
   if (!p) return 1 + r * 10;
 
-  if (!p.number && !p.rarity && isSealedName(p.name)) {
-    const [, base] = SEALED_BASE.find(([re]) => re.test(p.name))!;
-    // vintage premium for the Pokemon Base Set wall
-    const vintage = p.groupId === 604 ? 10 : 1;
-    return base * vintage * (0.85 + r * 0.3);
+  if (!p.number && !p.rarity) {
+    const anchor = sealedAnchor(p.name);
+    // +/-15% so four theme decks are not four identical prices
+    if (anchor != null) return anchor * (0.85 + r * 0.3);
+    return 12 + r * 30;
   }
+
+  // +/-6% around the anchor: enough jitter to look like a market, never
+  // enough to reorder the holo run.
+  const anchor = SINGLE_ANCHORS[p.name];
+  if (anchor != null) return anchor * (0.94 + r * 0.12);
 
   switch (p.rarity) {
     case "Rare Holo":
-      return 25 + r * 375; // Charizard territory at the top
+      return 20 + r * 15; // any holo without an anchor sits under Machamp
     case "Mythic":
       return 8 + r * 32;
     case "Rare":
-      return 1.5 + r * 12;
+      return 3 + r * 7;
     case "Uncommon":
-      return 0.4 + r * 2.5;
+      return 1 + r * 2;
     default:
-      return 0.15 + r * 1.2;
+      return BASIC_ENERGY.test(p.name) ? 0.45 + r * 0.15 : 0.4 + r * 1.1;
   }
 }
 

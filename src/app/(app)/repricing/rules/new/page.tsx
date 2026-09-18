@@ -8,8 +8,8 @@ export default async function NewRulePage() {
   return (
     <div>
       <PageHeader
-        title="New repricing rule"
-        description="Scope which inventory this rule covers, pick a market basis, and set the formula and guards."
+        title="New rule"
+        description="Rules run in priority order · the first match prices each line"
       />
       <RuleForm action={createRuleAction} />
     </div>

@@ -1,14 +1,13 @@
 import Link from "next/link";
 import { desc, eq, sql } from "drizzle-orm";
 import {
-  ArrowDownRight,
-  ArrowUpRight,
+  ArrowLeftRight,
   Bell,
   Boxes,
+  Gauge,
+  Package,
   Receipt,
-  ShoppingCart,
-  Tags,
-  TicketPercent,
+  Target,
   TrendingUp,
   Upload,
 } from "lucide-react";
@@ -16,13 +15,23 @@ import { db } from "@/db";
 import { alertEvents, alerts, expansions, products, repriceRuns, transactions } from "@/db/schema";
 import { requireStore } from "@/lib/tenancy";
 import { EmptyState, PageHeader } from "@/components/page-header";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { InventoryValueChart, type ValuePoint } from "@/components/inventory-value-chart";
-import { ProductImage } from "@/components/product-image";
 import { cn, formatDateTime, formatMoney, formatPct } from "@/lib/utils";
 import { StickerRow } from "./sticker-row";
+import {
+  EmptyRows,
+  Row,
+  RowActions,
+  RowBody,
+  RowIcon,
+  RowMeta,
+  RowRail,
+  RowThumb,
+  RowTitle,
+  SectionCard,
+  StatCard,
+} from "./ui";
 
 // Headline stats read better without cents.
 function formatMoneyWhole(value: string | number | null | undefined): string {
@@ -40,6 +49,17 @@ function formatWhen(d: Date | string): string {
   }
   return formatDateTime(date);
 }
+
+const alertIcons: Record<string, React.ComponentType<{ className?: string }>> = {
+  threshold_cross: Target,
+  pct_change: TrendingUp,
+  velocity: Gauge,
+  buylist_arb: ArrowLeftRight,
+  restock_velocity: Package,
+};
+
+// Dashboard is a triage surface: each card is capped and links out for the rest.
+const STICKER_CAP = 6;
 
 export default async function DashboardPage() {
   const ctx = await requireStore();
@@ -147,7 +167,7 @@ export default async function DashboardPage() {
         join expansions e on e.group_id = p.group_id
         where b.price > 0
         order by abs((l.price - b.price) / nullif(b.price,0)) desc
-        limit 8
+        limit 5
       `).then((r) => r.rows)
     : [];
 
@@ -156,6 +176,7 @@ export default async function DashboardPage() {
       id: alertEvents.id,
       firedAt: alertEvents.firedAt,
       alertName: alerts.name,
+      alertType: alerts.type,
       productId: products.productId,
       productName: products.name,
       payload: alertEvents.payload,
@@ -183,6 +204,7 @@ export default async function DashboardPage() {
       occurredAt: transactions.occurredAt,
       productId: products.productId,
       productName: products.name,
+      productImage: products.imageUrl,
     })
     .from(transactions)
     .innerJoin(products, eq(products.productId, transactions.productId))
@@ -234,7 +256,7 @@ export default async function DashboardPage() {
         from due
         order by (sticker_price is not null) desc,
                  abs(suggested - coalesce(sticker_price, suggested)) desc
-        limit 12
+        limit ${STICKER_CAP}
       `).then((r) => r.rows)
     : [];
   const stickerTotal = stickerQueue.length > 0 ? Number(stickerQueue[0].total) : 0;
@@ -247,9 +269,20 @@ export default async function DashboardPage() {
         ? "Preview ready"
         : "Preview discarded";
 
+  const headerFacts = hasInventory
+    ? `${stats.lines.toLocaleString()} lines · ${formatMoneyWhole(stats.total_value)} at current prices`
+    : "No inventory yet";
+  const todaySales = today?.sales ?? 0;
+
   return (
-    <div className="space-y-6">
-      <PageHeader title="Dashboard" description={`${ctx.storeName} at a glance.`} />
+    <div>
+      <PageHeader title="Dashboard" description={headerFacts}>
+        {hasInventory ? (
+          <Button asChild>
+            <Link href="/transactions">Record a sale</Link>
+          </Button>
+        ) : null}
+      </PageHeader>
 
       {!hasInventory ? (
         <EmptyState
@@ -280,8 +313,8 @@ export default async function DashboardPage() {
           }
         />
       ) : (
-        <>
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
             <StatCard
               label="Inventory value"
               value={formatMoneyWhole(stats.total_value)}
@@ -305,287 +338,205 @@ export default async function DashboardPage() {
             />
           </div>
 
-          <Card className={stickerTotal > 0 ? "border-warning/50" : undefined}>
-            <CardHeader className="flex-row items-center justify-between space-y-0">
-              <CardTitle className="flex items-center gap-2">
-                <TicketPercent className="h-4 w-4" />
-                Sticker queue
-                {stickerTotal > 0 ? (
-                  <Badge variant="warning">{stickerTotal} to re-label</Badge>
-                ) : (
-                  <Badge variant="success">all current</Badge>
-                )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {stickerQueue.length === 0 ? (
-                <p className="py-2 text-sm text-muted-foreground">
-                  Every shelf sticker matches the current price. When a price change moves an
-                  item past its sticker, it shows up here as a to-do.
-                </p>
+          <SectionCard
+            title="Sticker queue"
+            meta={stickerTotal > 0 ? `${stickerTotal} to re-label` : "all current"}
+            bodyClassName="p-0"
+            footerHref={stickerTotal > stickerQueue.length ? "/inventory" : undefined}
+            footerLabel={
+              stickerTotal > stickerQueue.length
+                ? `View all ${stickerTotal} to re-label →`
+                : undefined
+            }
+          >
+            {stickerQueue.length === 0 ? (
+              <EmptyRows>
+                Every shelf sticker matches the current price. Items show up here when a price
+                change moves past the sticker.
+              </EmptyRows>
+            ) : (
+              stickerQueue.map((s, i) => (
+                <StickerRow
+                  key={s.id}
+                  // Phone caps the walk-list at four rows; desktop shows all six.
+                  className={i >= 4 ? "hidden md:flex" : undefined}
+                  item={{
+                    id: s.id,
+                    productId: s.product_id,
+                    name: s.name,
+                    imageUrl: s.image_url,
+                    condition: s.condition,
+                    printing: s.printing,
+                    quantity: s.quantity,
+                    suggested: Number(s.suggested),
+                    stickerPrice: s.sticker_price !== null ? Number(s.sticker_price) : null,
+                  }}
+                />
+              ))
+            )}
+          </SectionCard>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <SectionCard
+              title="Counter activity"
+              meta={`${todaySales} ${todaySales === 1 ? "sale" : "sales"} today · ${formatMoney(
+                today?.revenue ?? 0
+              )}`}
+              bodyClassName="p-0"
+              footerHref="/transactions"
+              footerLabel="View all sales and buys →"
+            >
+              {recentTransactions.length === 0 ? (
+                <EmptyRows>
+                  No sales or buys recorded yet. Every entry builds your store&apos;s own price
+                  history.
+                </EmptyRows>
               ) : (
-                <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
-                  {stickerQueue.map((s) => (
-                    <StickerRow
-                      key={s.id}
-                      item={{
-                        id: s.id,
-                        productId: s.product_id,
-                        name: s.name,
-                        imageUrl: s.image_url,
-                        condition: s.condition,
-                        printing: s.printing,
-                        quantity: s.quantity,
-                        suggested: Number(s.suggested),
-                        stickerPrice: s.sticker_price !== null ? Number(s.sticker_price) : null,
-                      }}
-                    />
-                  ))}
-                </div>
-              )}
-              {stickerTotal > stickerQueue.length ? (
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Showing the {stickerQueue.length} biggest moves of {stickerTotal} total.
-                  Mark these updated and the next batch appears.
-                </p>
-              ) : null}
-            </CardContent>
-          </Card>
-
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 xl:grid-cols-3">
-            <Card>
-              <CardHeader className="flex-row items-center justify-between space-y-0">
-                <CardTitle className="flex items-center gap-2">
-                  <Receipt className="h-4 w-4" />
-                  Counter activity
-                </CardTitle>
-                <Link href="/transactions" className="text-sm text-primary hover:underline">
-                  Record a sale
-                </Link>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <p className="rounded-md bg-muted/50 px-3 py-2 text-sm">
-                  <span className="text-muted-foreground">Today:</span>{" "}
-                  <span className="font-medium tabular-nums">
-                    {today?.sales ?? 0} {(today?.sales ?? 0) === 1 ? "sale" : "sales"} ·{" "}
-                    {formatMoney(today?.revenue ?? 0)}
-                  </span>
-                </p>
-                {recentTransactions.length === 0 ? (
-                  <p className="py-4 text-center text-sm text-muted-foreground">
-                    No sales or buys recorded yet.{" "}
-                    <Link href="/transactions" className="text-primary hover:underline">
-                      Record the first one
-                    </Link>{" "}
-                    — every entry builds your store&apos;s own price history.
-                  </p>
-                ) : (
-                  recentTransactions.map((t) => (
-                    <div
-                      key={t.id}
-                      className="flex items-center justify-between gap-2 rounded-md border px-3 py-2"
-                    >
-                      <div className="min-w-0">
-                        <Link
-                          href={`/products/${t.productId}`}
-                          className="block truncate text-sm font-medium text-primary hover:underline"
-                        >
+                recentTransactions.map((t) => {
+                  const total = Number(t.unitPrice) * t.quantity;
+                  return (
+                    <Row key={t.id}>
+                      <RowThumb
+                        productId={t.productId}
+                        imageUrl={t.productImage}
+                        name={t.productName}
+                      />
+                      <RowBody>
+                        <RowTitle href={`/products/${t.productId}`} title={t.productName}>
                           {t.productName}
-                        </Link>
-                        <span className="text-xs text-muted-foreground">
+                        </RowTitle>
+                        <RowMeta>
+                          {t.quantity > 1 ? `${t.quantity} × · ` : ""}
                           {formatWhen(t.occurredAt)}
+                        </RowMeta>
+                      </RowBody>
+                      <RowRail>
+                        <span
+                          className={cn(
+                            "text-sm font-medium tabular-nums",
+                            t.side === "sale" ? "text-success" : "text-destructive"
+                          )}
+                        >
+                          {t.side === "sale" ? "+" : "−"}
+                          {formatMoney(total)}
                         </span>
-                      </div>
-                      <div
-                        className={cn(
-                          "shrink-0 text-sm font-semibold tabular-nums",
-                          t.side === "sale" ? "text-success" : "text-muted-foreground"
-                        )}
-                      >
-                        {t.side === "sale" ? "+" : "−"}
-                        {formatMoney(Number(t.unitPrice) * t.quantity)}
-                      </div>
-                    </div>
-                  ))
-                )}
-              </CardContent>
-            </Card>
+                      </RowRail>
+                    </Row>
+                  );
+                })
+              )}
+            </SectionCard>
 
-            <Card>
-              <CardHeader className="flex-row items-center justify-between space-y-0">
-                <CardTitle className="flex items-center gap-2">
-                  <TrendingUp className="h-4 w-4" />
-                  Top movers (7d, your stock)
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {movers.length === 0 ? (
-                  <p className="py-4 text-center text-sm text-muted-foreground">
-                    Price movers show up once your stock has a week of price history. Check back
-                    in a few days.
-                  </p>
-                ) : (
-                  movers.map((m) => {
-                    const pct = Number(m.pct);
-                    return (
-                      <div
-                        key={m.product_id}
-                        className="flex items-center gap-3 rounded-md border px-3 py-2"
-                      >
-                        <ProductImage
-                          productId={m.product_id}
-                          imageUrl={m.image_url}
-                          name={m.name}
-                          className="h-12 w-9 shrink-0"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <Link
-                            href={`/products/${m.product_id}`}
-                            className="block truncate text-sm font-medium text-primary hover:underline"
-                          >
-                            {m.name}
+            <SectionCard
+              title="Top movers"
+              meta="7 days · your stock"
+              bodyClassName="p-0"
+              footerHref="/inventory"
+              footerLabel="View inventory →"
+            >
+              {movers.length === 0 ? (
+                <EmptyRows>
+                  Price movers show up once your stock has a week of price history.
+                </EmptyRows>
+              ) : (
+                movers.map((m) => {
+                  const pct = Number(m.pct);
+                  return (
+                    <Row key={m.product_id}>
+                      <RowThumb
+                        productId={m.product_id}
+                        imageUrl={m.image_url}
+                        name={m.name}
+                      />
+                      <RowBody>
+                        <RowTitle href={`/products/${m.product_id}`} title={m.name}>
+                          {m.name}
+                        </RowTitle>
+                        <RowMeta>
+                          {m.set_name}
+                          {m.ptype === "sealed" ? " · sealed" : ""}
+                          {" · was "}
+                          <span className="tabular-nums">{formatMoney(m.then_price)}</span>
+                        </RowMeta>
+                      </RowBody>
+                      <RowRail>
+                        <span className="text-sm font-medium tabular-nums text-foreground">
+                          {formatMoney(m.now_price)}
+                        </span>
+                        <span
+                          className={cn(
+                            "text-xs font-medium tabular-nums",
+                            pct >= 0 ? "text-success" : "text-destructive"
+                          )}
+                        >
+                          {formatPct(pct)}
+                        </span>
+                      </RowRail>
+                      <RowActions className="w-[60px]">
+                        <Button asChild size="sm" variant="outline">
+                          <Link href={`/transactions?productId=${m.product_id}&side=sale`}>
+                            Sell
                           </Link>
-                          <span className="block truncate text-xs text-muted-foreground">
-                            {m.set_name}
-                            {m.ptype === "sealed" ? " · sealed" : ""}
-                          </span>
-                          <span className="text-xs text-muted-foreground tabular-nums">
-                            {formatMoney(m.then_price)} → {formatMoney(m.now_price)}
-                          </span>
-                        </div>
-                        <div className="flex shrink-0 flex-col items-end gap-1">
-                          <div
-                            className={cn(
-                              "flex items-center gap-1 text-sm font-semibold tabular-nums",
-                              pct >= 0 ? "text-success" : "text-destructive"
-                            )}
-                          >
-                            {pct >= 0 ? (
-                              <ArrowUpRight className="h-4 w-4" />
-                            ) : (
-                              <ArrowDownRight className="h-4 w-4" />
-                            )}
-                            {formatPct(pct)}
-                          </div>
-                          <Button asChild size="sm" variant="outline" className="h-11 md:h-8">
-                            <Link href={`/transactions?productId=${m.product_id}&side=sale`}>
-                              <ShoppingCart />
-                              Sell
-                            </Link>
-                          </Button>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex-row items-center justify-between space-y-0">
-                <CardTitle className="flex items-center gap-2">
-                  <Bell className="h-4 w-4" />
-                  Recent alerts
-                </CardTitle>
-                <Link href="/alerts" className="text-sm text-primary hover:underline">
-                  View all
-                </Link>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {recentEvents.length === 0 ? (
-                  <p className="py-4 text-center text-sm text-muted-foreground">
-                    No alerts fired yet.{" "}
-                    <Link href="/alerts" className="text-primary hover:underline">
-                      Create alerts
-                    </Link>{" "}
-                    to hear about spikes, drops, and restock signals.
-                  </p>
-                ) : (
-                  recentEvents.map((e) => {
-                    const p = e.payload as Record<string, unknown>;
-                    const pctChange =
-                      "pct_change" in p && p.pct_change != null ? Number(p.pct_change) : null;
-                    const market = "market" in p && p.market != null ? Number(p.market) : null;
-                    return (
-                      <div key={e.id} className="rounded-md border px-3 py-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="truncate text-sm font-medium">{e.alertName}</span>
-                          <span className="shrink-0 text-xs text-muted-foreground">
-                            {formatWhen(e.firedAt)}
-                          </span>
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          <Link
-                            href={`/products/${e.productId}`}
-                            className="text-primary hover:underline"
-                          >
-                            {e.productName}
-                          </Link>
-                          {pctChange !== null ? ` · ${formatPct(pctChange)}` : ""}
-                          {market !== null ? ` · now ${formatMoney(market)}` : ""}
-                        </p>
-                      </div>
-                    );
-                  })
-                )}
-              </CardContent>
-            </Card>
+                        </Button>
+                      </RowActions>
+                    </Row>
+                  );
+                })
+              )}
+            </SectionCard>
           </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Inventory value · last 30 days</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <InventoryValueChart data={valueSeries} />
-            </CardContent>
-          </Card>
+          <SectionCard
+            title="Recent alerts"
+            bodyClassName="p-0"
+            footerHref="/alerts"
+            footerLabel="View all alerts →"
+          >
+            {recentEvents.length === 0 ? (
+              <EmptyRows>
+                No alerts fired yet. Create one to hear about spikes, drops, and restock signals.
+              </EmptyRows>
+            ) : (
+              recentEvents.map((e) => {
+                const p = e.payload as Record<string, unknown>;
+                const pctChange =
+                  "pct_change" in p && p.pct_change != null ? Number(p.pct_change) : null;
+                const market = "market" in p && p.market != null ? Number(p.market) : null;
+                const Icon = alertIcons[e.alertType] ?? Bell;
+                const meta = [
+                  e.productName,
+                  pctChange !== null ? formatPct(pctChange) : null,
+                  market !== null ? `now ${formatMoney(market)}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ");
+                return (
+                  <Row key={e.id}>
+                    <RowIcon>
+                      <Icon className="size-4" />
+                    </RowIcon>
+                    <RowBody>
+                      <RowTitle href={`/products/${e.productId}`} title={e.alertName}>
+                        {e.alertName}
+                      </RowTitle>
+                      <RowMeta>{meta}</RowMeta>
+                    </RowBody>
+                    <RowRail>
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        {formatWhen(e.firedAt)}
+                      </span>
+                    </RowRail>
+                  </Row>
+                );
+              })
+            )}
+          </SectionCard>
 
-          <div className="flex flex-wrap gap-2">
-            <Button asChild variant="outline">
-              <Link href="/transactions">
-                <Receipt />
-                Record a sale
-              </Link>
-            </Button>
-            <Button asChild variant="outline">
-              <Link href="/repricing">
-                <Tags />
-                Run repricing
-              </Link>
-            </Button>
-            <Button asChild variant="outline">
-              <Link href="/inventory/import">
-                <Upload />
-                Import CSV
-              </Link>
-            </Button>
-          </div>
-        </>
+          <SectionCard title="Inventory value" meta="last 30 days" bodyClassName="p-4">
+            <InventoryValueChart data={valueSeries} />
+          </SectionCard>
+        </div>
       )}
     </div>
   );
-}
-
-function StatCard({
-  label,
-  value,
-  sub,
-  href,
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-  href?: string;
-}) {
-  const inner = (
-    <Card className={cn(href && "transition-colors hover:border-primary/50")}>
-      <CardContent className="pt-6">
-        <p className="text-sm text-muted-foreground">{label}</p>
-        <p className="mt-1 text-2xl font-semibold tabular-nums">{value}</p>
-        {sub ? <p className="mt-1 text-xs text-muted-foreground">{sub}</p> : null}
-      </CardContent>
-    </Card>
-  );
-  return href ? <Link href={href}>{inner}</Link> : inner;
 }

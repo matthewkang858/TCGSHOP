@@ -2,20 +2,33 @@ import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
+/**
+ * A badge means EXCEPTION (sealed, foil, flagged, low stock, unmatched, needs
+ * sticker). A value that shows up on most rows is not a badge.
+ *
+ * Three real variants: neutral / attention / critical. The older names are
+ * kept as aliases so in-flight callers keep compiling, but they all resolve to
+ * one of the three — nothing renders as a solid indigo pill any more, because
+ * that competes with the single primary button on the page.
+ */
 const badgeVariants = cva(
-  "inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium transition-colors",
+  "inline-flex items-center rounded-[4px] border px-1.5 py-px text-[11px] font-medium leading-4 whitespace-nowrap",
   {
     variants: {
       variant: {
-        default: "border-transparent bg-primary text-primary-foreground",
-        secondary: "border-transparent bg-secondary text-secondary-foreground",
-        destructive: "border-transparent bg-destructive text-destructive-foreground",
-        outline: "text-foreground",
-        success: "border-success/20 bg-success/10 text-success-foreground",
-        warning: "border-warning/20 bg-warning/10 text-warning-foreground",
+        neutral: "border-border bg-muted text-muted-foreground",
+        attention: "border-warning/25 bg-warning/10 text-warning-foreground",
+        critical: "border-destructive/25 bg-destructive/10 text-destructive",
+        // Deprecated aliases.
+        default: "border-border bg-muted text-muted-foreground",
+        secondary: "border-border bg-muted text-muted-foreground",
+        outline: "border-border bg-transparent text-muted-foreground",
+        success: "border-border bg-muted text-muted-foreground",
+        warning: "border-warning/25 bg-warning/10 text-warning-foreground",
+        destructive: "border-destructive/25 bg-destructive/10 text-destructive",
       },
     },
-    defaultVariants: { variant: "default" },
+    defaultVariants: { variant: "neutral" },
   }
 );
 

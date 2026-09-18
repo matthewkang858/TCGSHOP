@@ -7,13 +7,7 @@ import { getSessionUser } from "@/lib/tenancy";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AuthShell } from "./auth-shell";
 import { demoLoginAction } from "./demo-login";
 
@@ -36,16 +30,14 @@ export default async function LoginPage({
 
   return (
     <AuthShell>
-      <Card className="shadow-float">
-        <CardHeader className="text-center">
-          <CardTitle className="text-xl">Sign in</CardTitle>
-          <CardDescription>
-            We&apos;ll email you a magic link. No password needed.
-          </CardDescription>
+      <Card>
+        <CardHeader>
+          <CardTitle>Sign in</CardTitle>
+          <span className="text-xs text-muted-foreground">Magic link · no password</span>
         </CardHeader>
         <CardContent className="space-y-4">
           {error ? (
-            <p className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-center text-xs text-destructive">
+            <p className="rounded-md border border-destructive/25 bg-destructive/10 px-3 py-2 text-xs text-destructive">
               {error}
             </p>
           ) : null}
@@ -66,8 +58,8 @@ export default async function LoginPage({
             </>
           ) : null}
 
-          <form action={loginAction} className="space-y-4">
-            <div className="space-y-2">
+          <form action={loginAction} className="space-y-3">
+            <div className="space-y-1.5">
               <Label htmlFor="email">Email</Label>
               <Input
                 id="email"
@@ -79,13 +71,14 @@ export default async function LoginPage({
             </div>
             <Button
               type="submit"
+              size="lg"
               variant={env.DEMO_LOGIN ? "outline" : "default"}
               className="w-full"
             >
               Send magic link
             </Button>
             {!env.RESEND_API_KEY ? (
-              <p className="rounded-md border border-border/60 bg-muted/50 px-3 py-2 text-center text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 Demo mode: the sign-in link prints to the server console.
               </p>
             ) : null}

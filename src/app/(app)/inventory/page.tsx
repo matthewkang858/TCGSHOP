@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { and, asc, count, desc, eq, ilike, sql, sum, type SQL } from "drizzle-orm";
-import { Boxes, FileDown, ShoppingCart, Upload } from "lucide-react";
+import { Boxes, FileDown, Search, SlidersHorizontal, Upload } from "lucide-react";
 import { z } from "zod";
 import { db } from "@/db";
 import { expansions, inventoryItems, products } from "@/db/schema";
 import { requireStore } from "@/lib/tenancy";
 import { EmptyState, PageHeader } from "@/components/page-header";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import {
@@ -19,8 +19,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatMoney } from "@/lib/utils";
-import { ProductImage } from "@/components/product-image";
-import { RowEditor } from "./row-editor";
+import { InventoryListRow, InventoryRow, type InventoryRowItem } from "./row-editor";
 
 const searchSchema = z.object({
   q: z.string().max(200).optional(),
@@ -103,6 +102,20 @@ export default async function InventoryPage({
 
   const hasAny = total > 0 || params.q || params.type || params.condition || params.tag;
 
+  const items: InventoryRowItem[] = rows.map((r) => ({
+    id: r.id,
+    productId: r.productId,
+    productName: r.productName,
+    imageUrl: r.imageUrl,
+    expansionName: r.expansionName,
+    productType: r.productType,
+    condition: r.condition,
+    printing: r.printing,
+    quantity: r.quantity,
+    currentPrice: r.currentPrice,
+    costBasis: r.costBasis,
+  }));
+
   return (
     <div>
       <PageHeader
@@ -119,9 +132,9 @@ export default async function InventoryPage({
 
       {!hasAny ? (
         <EmptyState
-          icon={<Boxes className="h-8 w-8" />}
+          icon={<Boxes />}
           title="No inventory yet"
-          description="Import your TCGplayer inventory export (or any CSV) to get started. Singles and sealed product both work."
+          description="Import a TCGplayer export or any CSV to get started. Singles and sealed both work."
           action={
             <div className="flex flex-col items-center gap-3">
               <Button asChild>
@@ -132,156 +145,161 @@ export default async function InventoryPage({
               </Button>
               <a
                 href="/api/sample-inventory.csv"
-                className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
               >
-                <FileDown className="h-4 w-4" />
-                No export handy? Download a sample CSV
+                <FileDown className="size-4" />
+                Download a sample CSV
               </a>
             </div>
           }
         />
       ) : (
         <>
-          <form method="get" className="mb-4 flex flex-wrap items-end gap-3">
-            <div className="w-64">
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                Search
-              </label>
-              <Input name="q" placeholder="Product name…" defaultValue={params.q ?? ""} />
-            </div>
-            <div className="w-32">
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">Type</label>
-              <Select name="type" defaultValue={params.type ?? ""}>
-                <option value="">All</option>
-                <option value="single">Singles</option>
-                <option value="sealed">Sealed</option>
-                <option value="other">Other</option>
-              </Select>
-            </div>
-            <div className="w-40">
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                Condition
-              </label>
-              <Select name="condition" defaultValue={params.condition ?? ""}>
-                <option value="">All</option>
-                {conditions.map((c) => (
-                  <option key={c.condition} value={c.condition}>
-                    {c.condition}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <div className="w-36">
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">Sort</label>
-              <Select name="sort" defaultValue={params.sort}>
-                <option value="name">Name</option>
-                <option value="quantity">Quantity</option>
-                <option value="price">Price</option>
-                <option value="value">Line value</option>
-                <option value="updated">Last updated</option>
-              </Select>
-            </div>
-            <div className="w-28">
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">Dir</label>
-              <Select name="dir" defaultValue={params.dir}>
-                <option value="asc">Asc</option>
-                <option value="desc">Desc</option>
-              </Select>
-            </div>
-            <Button type="submit" variant="secondary">
-              Apply
-            </Button>
-          </form>
+          <FilterBar params={params} conditions={conditions.map((c) => c.condition)} />
 
-          <div className="overflow-hidden rounded-lg border bg-card">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="min-w-52">Product</TableHead>
-                  <TableHead>Set</TableHead>
-                  <TableHead>Condition</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead className="hidden lg:table-cell">Tags</TableHead>
-                  <TableHead className="text-right">Qty / Price / Cost</TableHead>
-                  <TableHead className="sr-only">Sell</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <ProductImage
-                          productId={item.productId}
-                          imageUrl={item.imageUrl}
-                          name={item.productName}
-                          className="h-14 w-10 shrink-0"
-                        />
-                        <span>
-                          <Link
-                            href={`/products/${item.productId}`}
-                            className="font-medium text-primary hover:underline"
-                          >
-                            {item.productName}
-                          </Link>
-                          {item.printing === "Foil" ? (
-                            <span className="ml-1 text-xs text-warning">✦ foil</span>
-                          ) : null}
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">{item.expansionName}</TableCell>
-                    <TableCell className="text-muted-foreground">{item.condition}</TableCell>
-                    <TableCell>
-                      <Badge variant={item.productType === "sealed" ? "warning" : "secondary"}>
-                        {item.productType}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="hidden lg:table-cell">
-                      <div className="flex max-w-36 flex-wrap gap-1">
-                        {item.tags.map((t) => (
-                          <Badge key={t} variant="outline">
-                            {t}
-                          </Badge>
-                        ))}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <RowEditor
-                        item={{
-                          id: item.id,
-                          quantity: item.quantity,
-                          currentPrice: item.currentPrice,
-                          costBasis: item.costBasis,
-                          tags: item.tags,
-                        }}
-                      />
-                    </TableCell>
-                    <TableCell className="pr-3">
-                      <Button asChild variant="outline" size="sm">
-                        <Link href={sellHref(item)} title="Record a sale of this item">
-                          <ShoppingCart />
-                          Sell
-                        </Link>
-                      </Button>
-                    </TableCell>
+          <Card className="overflow-clip">
+            {/* Desktop: 5 data columns + one reserved action cell, table-fixed. */}
+            <div className="hidden md:block">
+              <Table>
+                <colgroup>
+                  <col className="w-[46%]" />
+                  <col className="w-[14%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[15%]" />
+                  <col className="w-[15%]" />
+                  <col className="w-[104px]" />
+                </colgroup>
+                <TableHeader sticky={items.length > 20}>
+                  <TableRow className="h-9 hover:bg-transparent">
+                    <TableHead>Product</TableHead>
+                    <TableHead>Condition</TableHead>
+                    <TableHead className="text-right">Qty</TableHead>
+                    <TableHead className="text-right">Price</TableHead>
+                    <TableHead className="text-right">Cost</TableHead>
+                    <TableHead>
+                      <span className="sr-only">Actions</span>
+                    </TableHead>
                   </TableRow>
-                ))}
-                {rows.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
-                      No inventory matches these filters.
-                    </TableCell>
-                  </TableRow>
-                ) : null}
-              </TableBody>
-            </Table>
-          </div>
+                </TableHeader>
+                <TableBody>
+                  {items.map((item) => (
+                    <InventoryRow key={item.id} item={item} sellHref={sellHref(item)} />
+                  ))}
+                  {items.length === 0 ? (
+                    <TableRow className="h-auto hover:bg-transparent">
+                      <TableCell colSpan={6} className="py-10 text-center text-xs text-muted-foreground">
+                        No inventory matches these filters.
+                      </TableCell>
+                    </TableRow>
+                  ) : null}
+                </TableBody>
+              </Table>
+            </div>
+
+            {/* Phone: the shared 64px list row, never a horizontally scrolled table. */}
+            <div className="md:hidden">
+              {items.map((item) => (
+                <InventoryListRow key={item.id} item={item} sellHref={sellHref(item)} />
+              ))}
+              {items.length === 0 ? (
+                <p className="py-10 text-center text-xs text-muted-foreground">
+                  No inventory matches these filters.
+                </p>
+              ) : null}
+            </div>
+          </Card>
 
           <Pagination page={params.page} total={total} params={params} />
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * One quiet toolbar: search is always visible, the selects collapse behind a
+ * "Filters" disclosure below md (`md:contents` folds them back into one row).
+ */
+function FilterBar({
+  params,
+  conditions,
+}: {
+  params: z.infer<typeof searchSchema>;
+  conditions: string[];
+}) {
+  return (
+    <form method="get" className="mb-4 flex flex-wrap items-center gap-2">
+      {params.tag ? <input type="hidden" name="tag" value={params.tag} /> : null}
+      <div className="flex w-full min-w-0 items-center gap-2 md:w-auto">
+        <Input
+          name="q"
+          placeholder="Search products…"
+          aria-label="Search products"
+          defaultValue={params.q ?? ""}
+          className="h-9 min-w-0 flex-1 md:w-64 md:flex-none"
+        />
+        {/* Phone-only submit; on desktop the toolbar's Apply button is visible. */}
+        <Button type="submit" variant="outline" size="icon" className="md:hidden" aria-label="Search">
+          <Search />
+        </Button>
+      </div>
+      <details className="group w-full md:contents">
+        <summary className="inline-flex h-9 cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-muted-foreground md:hidden">
+          <SlidersHorizontal className="size-4" />
+          Filters
+        </summary>
+        <div className="mt-2 hidden w-full flex-wrap items-center gap-2 group-open:flex md:mt-0 md:flex md:w-auto">
+          <Select
+            name="type"
+            aria-label="Product type"
+            defaultValue={params.type ?? ""}
+            className="h-9 w-[calc(50%-0.25rem)] md:w-32"
+          >
+            <option value="">All types</option>
+            <option value="single">Singles</option>
+            <option value="sealed">Sealed</option>
+            <option value="other">Other</option>
+          </Select>
+          <Select
+            name="condition"
+            aria-label="Condition"
+            defaultValue={params.condition ?? ""}
+            className="h-9 w-[calc(50%-0.25rem)] md:w-40"
+          >
+            <option value="">All conditions</option>
+            {conditions.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </Select>
+          <Select
+            name="sort"
+            aria-label="Sort by"
+            defaultValue={params.sort}
+            className="h-9 w-[calc(50%-0.25rem)] md:w-36"
+          >
+            <option value="name">Name</option>
+            <option value="quantity">Quantity</option>
+            <option value="price">Price</option>
+            <option value="value">Line value</option>
+            <option value="updated">Last updated</option>
+          </Select>
+          <Select
+            name="dir"
+            aria-label="Sort direction"
+            defaultValue={params.dir}
+            className="h-9 w-[calc(50%-0.25rem)] md:w-28"
+          >
+            <option value="asc">Asc</option>
+            <option value="desc">Desc</option>
+          </Select>
+          <Button type="submit" variant="outline" className="w-full md:w-auto">
+            Apply
+          </Button>
+        </div>
+      </details>
+    </form>
   );
 }
 
@@ -319,18 +337,18 @@ function Pagination({
     return `/inventory?${sp}`;
   };
   return (
-    <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground">
-      <span>
+    <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
+      <span className="tabular-nums">
         Page {page} of {pages}
       </span>
-      <div className="flex gap-2">
+      <div className="flex gap-4">
         {page > 1 ? (
-          <Link href={qs(page - 1)} className="text-primary hover:underline">
+          <Link href={qs(page - 1)} className="font-medium text-primary hover:underline">
             ← Previous
           </Link>
         ) : null}
         {page < pages ? (
-          <Link href={qs(page + 1)} className="text-primary hover:underline">
+          <Link href={qs(page + 1)} className="font-medium text-primary hover:underline">
             Next →
           </Link>
         ) : null}

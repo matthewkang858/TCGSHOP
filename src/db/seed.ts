@@ -2,9 +2,10 @@
  * `pnpm seed` - demo data so the full loop works immediately, offline:
  *  - demo store + user (magic link logs to console)
  *  - fixture catalog (Pokemon Base Set - singles + sealed)
- *  - ~50 inventory lines: singles across conditions + 8 sealed w/ cost basis
+ *  - ~60 inventory lines: the holo case across conditions, playables, bulk,
+ *    and a small sealed shelf, all with cost bases
  *  - 2 reprice rules (singles peg / sealed margin-guarded)
- *  - 3 alerts (pct_change 7d>=20%, Charizard threshold watch, restock on a booster box)
+ *  - 3 alerts (pct_change 7d>=20%, Charizard threshold watch, restock on packs)
  *  - 30 days of price snapshots + sales stats, then one alert-eval pass so
  *    the dashboard, charts, and alert feed demo instantly
  */
@@ -42,19 +43,33 @@ const DAY = 86_400_000;
 const DEMO_EMAIL = "demo@countertop.local";
 const DEMO_STORE = "Countertop Demo Store";
 
+/** synthetic id band the offline fixture catalog allocates from */
+const FIXTURE_ID_MIN = 42_300;
+const FIXTURE_ID_MAX = 42_500;
+
 /**
  * Remove catalog rows outside the MVP game set (e.g. the MTG demo data from
- * earlier versions), including everything hanging off them.
+ * earlier versions) plus fixture products that have since been retired from
+ * the bundled catalog, including everything hanging off them. Without this a
+ * re-seed leaves ghosts behind: the upsert below only adds and updates.
  */
 async function pruneOutOfScopeCatalog() {
   const keepCats = FIXTURE_GAMES.map((g) => g.categoryId);
-  const stale = await db
-    .select({ productId: products.productId })
-    .from(products)
-    .where(notInArray(products.categoryId, keepCats));
-  if (stale.length === 0) return;
+  const fixtureIds = new Set(FIXTURE_PRODUCTS.map((p) => p.productId));
+  const all = await db
+    .select({ productId: products.productId, categoryId: products.categoryId })
+    .from(products);
+  const ids = all
+    .filter(
+      (p) =>
+        !keepCats.includes(p.categoryId) ||
+        (p.productId >= FIXTURE_ID_MIN &&
+          p.productId <= FIXTURE_ID_MAX &&
+          !fixtureIds.has(p.productId))
+    )
+    .map((p) => p.productId);
+  if (ids.length === 0) return;
 
-  const ids = stale.map((s) => s.productId);
   await db.delete(alertEvents).where(inArray(alertEvents.productId, ids));
   await db.delete(watchlistItems).where(inArray(watchlistItems.productId, ids));
   await db.delete(priceSnapshots).where(inArray(priceSnapshots.productId, ids));
@@ -65,7 +80,7 @@ async function pruneOutOfScopeCatalog() {
   await db.delete(products).where(inArray(products.productId, ids));
   await db.delete(expansions).where(notInArray(expansions.categoryId, keepCats));
   await db.delete(games).where(notInArray(games.categoryId, keepCats));
-  console.log(`✓ pruned ${ids.length} out-of-scope catalog products (non-Pokemon)`);
+  console.log(`✓ pruned ${ids.length} retired/out-of-scope catalog products`);
 }
 
 async function seedCatalog() {
@@ -186,82 +201,195 @@ async function main() {
   }
 
   // --- inventory ------------------------------------------------------------
-  const byGroup = (groupId: number) => FIXTURE_PRODUCTS.filter((p) => p.groupId === groupId);
+  // The demo store is a vintage counter: a Base Set singles case (the holo run
+  // in a couple of conditions each, plus playables and bulk) and a small sealed
+  // shelf. Quantities are hand-set rather than generated so the totals read
+  // like a real LGS - nobody has ten Charizards, everybody has a stack of
+  // Charmanders - and so no single line dominates the store's value.
+  const byName = new Map(FIXTURE_PRODUCTS.map((p) => [p.name, p]));
   const isSealed = (p: (typeof FIXTURE_PRODUCTS)[number]) =>
     classifyProduct({ name: p.name, number: p.number, rarity: p.rarity }) === "sealed";
+  const pokeSingles = FIXTURE_PRODUCTS.filter((p) => p.groupId === 604 && !isSealed(p));
 
-  const pokeSingles = byGroup(604).filter((p) => !isSealed(p));
-  const sealed = FIXTURE_PRODUCTS.filter(isSealed);
+  // Vintage condition ladder: played Base Set holos fall off NM harder than
+  // modern cards do, and the shelf price has to show it.
+  const CONDITION_FACTOR: Record<string, number> = {
+    "Near Mint": 1,
+    "Lightly Played": 0.78,
+    "Moderately Played": 0.58,
+    "Heavily Played": 0.4,
+    Unopened: 1,
+  };
 
-  // prefer products with the fixture spike so pct_change alerts demo
-  const spiked = pokeSingles.filter((p) => hasSpike(p.productId));
-  const pickSingles = [
-    ...spiked.slice(0, 8),
-    ...pokeSingles.filter((p) => !spiked.includes(p)).slice(0, 34),
-  ].slice(0, 42);
+  type SeedLine = {
+    productId: number;
+    condition: string;
+    quantity: number;
+    /** market -> shelf price (condition wear x this counter's local drift) */
+    priceFactor: number;
+    /** what the store paid, as a share of its own shelf price */
+    costRatio: number | null;
+    tags: string[];
+  };
 
-  const conditions = ["Near Mint", "Near Mint", "Lightly Played", "Moderately Played", "Heavily Played"];
-  const singleRows = pickSingles.map((p, i) => {
-    const market = fixturePrice(p.productId, "tcgplayer", "retail");
-    // deliberately misprice some lines so a reprice run shows real changes
-    const drift = [1.0, 0.85, 1.2, 0.6, 1.05][i % 5];
-    return {
-      storeId: store.id,
+  // [name, NM qty, second condition, second qty] - the holo case
+  const HOLO_CASE: Array<[string, number, string | null, number]> = [
+    ["Charizard", 1, "Lightly Played", 1],
+    ["Blastoise", 1, "Lightly Played", 2],
+    ["Venusaur", 2, "Moderately Played", 2],
+    ["Raichu", 2, "Lightly Played", 2],
+    ["Chansey", 3, "Moderately Played", 2],
+    ["Mewtwo", 3, "Lightly Played", 2],
+    ["Zapdos", 3, "Heavily Played", 2],
+    ["Alakazam", 4, "Moderately Played", 3],
+    ["Gyarados", 3, "Lightly Played", 3],
+    ["Nidoking", 3, null, 0],
+    ["Ninetales", 4, "Lightly Played", 2],
+    ["Clefairy", 4, null, 0],
+    ["Hitmonchan", 4, "Moderately Played", 3],
+    ["Poliwrath", 5, null, 0],
+    ["Magneton", 5, "Lightly Played", 4],
+    ["Machamp", 6, "Moderately Played", 4],
+  ];
+
+  // [name, condition, qty] - trainers, evolutions and bulk behind the case
+  const PLAYABLES: Array<[string, string, number]> = [
+    ["Computer Search", "Near Mint", 4],
+    ["Item Finder", "Near Mint", 5],
+    ["Professor Oak", "Lightly Played", 8],
+    ["Pokemon Breeder", "Near Mint", 6],
+    ["Pokemon Trader", "Near Mint", 5],
+    ["Super Energy Removal", "Lightly Played", 7],
+    ["Scoop Up", "Near Mint", 6],
+    ["Lass", "Near Mint", 4],
+    ["Dragonair", "Near Mint", 6],
+    ["Electabuzz", "Near Mint", 8],
+    ["Beedrill", "Moderately Played", 6],
+    ["Pidgeotto", "Lightly Played", 9],
+    ["Charmeleon", "Near Mint", 10],
+    ["Ivysaur", "Near Mint", 8],
+    ["Wartortle", "Near Mint", 8],
+    ["Kadabra", "Lightly Played", 12],
+    ["Magikarp", "Near Mint", 9],
+    ["Jynx", "Near Mint", 7],
+    ["Charmander", "Near Mint", 14],
+    ["Bulbasaur", "Near Mint", 12],
+    ["Squirtle", "Near Mint", 12],
+    ["Pikachu", "Near Mint", 18],
+    ["Double Colorless Energy", "Near Mint", 16],
+    ["Water Energy", "Near Mint", 24],
+  ];
+
+  // [name, qty] - the sealed shelf. A $5.5k Base Set booster box is watched,
+  // not stocked: one line that size swamps every chart the store looks at.
+  const SEALED_SHELF: Array<[string, number]> = [
+    ["Base Set Booster Pack", 6],
+    ["Base Set Blackout Theme Deck", 3],
+    ["Base Set Brushfire Theme Deck", 2],
+    ["Base Set Overgrowth Theme Deck", 3],
+    ["Base Set Zap Theme Deck", 2],
+    ["Base Set 2-Player Starter Set", 2],
+  ];
+
+  // a little local mispricing so a reprice run has real work to show
+  const LOCAL_DRIFT = [1.0, 0.96, 1.05, 0.92, 1.02];
+
+  const singleLines: SeedLine[] = [];
+  HOLO_CASE.forEach(([name, nmQty, altCondition, altQty], i) => {
+    const p = byName.get(name);
+    if (!p) return;
+    singleLines.push({
       productId: p.productId,
-      condition: conditions[i % conditions.length],
-      printing: i % 7 === 3 ? "Foil" : null,
-      language: "English",
-      quantity: 1 + ((i * 3) % 12),
-      currentPrice: Math.max(0.25, market * drift).toFixed(2),
-      costBasis: i % 4 === 0 ? (market * 0.5).toFixed(2) : null,
-      tags: i % 6 === 0 ? ["binder"] : i % 6 === 3 ? ["display-case"] : [],
-    };
+      condition: "Near Mint",
+      quantity: nmQty,
+      priceFactor: LOCAL_DRIFT[i % LOCAL_DRIFT.length],
+      costRatio: 0.5 + (i % 3) * 0.05, // bought over the counter at 50-60%
+      tags: i % 4 === 0 ? ["display-case"] : ["binder"],
+    });
+    if (altCondition && altQty > 0) {
+      singleLines.push({
+        productId: p.productId,
+        condition: altCondition,
+        quantity: altQty,
+        priceFactor:
+          CONDITION_FACTOR[altCondition] * LOCAL_DRIFT[(i + 2) % LOCAL_DRIFT.length],
+        costRatio: i % 3 === 0 ? null : 0.45 + (i % 4) * 0.05,
+        tags: [],
+      });
+    }
+  });
+  PLAYABLES.forEach(([name, condition, quantity], i) => {
+    const p = byName.get(name);
+    if (!p) return;
+    singleLines.push({
+      productId: p.productId,
+      condition,
+      quantity,
+      priceFactor: CONDITION_FACTOR[condition] * LOCAL_DRIFT[i % LOCAL_DRIFT.length],
+      costRatio: i % 3 === 0 ? null : 0.5,
+      tags: [],
+    });
   });
 
-  const sealedPicks = sealed.slice(0, 8);
-  const sealedRows = sealedPicks.map((p, i) => {
-    const market = fixturePrice(p.productId, "tcgplayer", "retail");
+  const sealedLines: SeedLine[] = SEALED_SHELF.map(([name, quantity], i) => {
+    const p = byName.get(name)!;
     return {
-      storeId: store.id,
       productId: p.productId,
       condition: "Unopened",
-      printing: null,
-      language: "English",
-      quantity: i === 0 ? 2 : 1 + (i % 5), // first sealed item runs low -> restock alert
-      currentPrice: (market * [0.92, 1.0, 1.15, 0.8][i % 4]).toFixed(2),
-      costBasis: (market * 0.82).toFixed(2), // distributor cost known for sealed
+      quantity,
+      priceFactor: [1.0, 1.04, 0.95, 1.0][i % 4],
+      costRatio: 0.72 + (i % 3) * 0.05, // vintage sealed comes in at 72-82%
       tags: ["sealed-wall"],
     };
   });
 
-  await db.insert(inventoryItems).values([...singleRows, ...sealedRows]);
-  console.log(`✓ inventory: ${singleRows.length} singles + ${sealedRows.length} sealed`);
+  const allLines = [...singleLines, ...sealedLines];
+  const lineRow = (line: SeedLine) => {
+    const shelf = Math.max(0.25, fixturePrice(line.productId, "tcgplayer", "retail") * line.priceFactor);
+    return {
+      storeId: store.id,
+      productId: line.productId,
+      condition: line.condition,
+      printing: null,
+      language: "English",
+      quantity: line.quantity,
+      currentPrice: shelf.toFixed(2),
+      costBasis: line.costRatio == null ? null : (shelf * line.costRatio).toFixed(2),
+      tags: line.tags,
+    };
+  };
+  // returning() preserves insertion order, so ids line up with allLines
+  const insertedItems = await db
+    .insert(inventoryItems)
+    .values(allLines.map(lineRow))
+    .returning({ id: inventoryItems.id });
+  console.log(`✓ inventory: ${singleLines.length} single lines + ${sealedLines.length} sealed lines`);
 
   // shelf stickers as of ~2 weeks ago: items whose price has since moved show
   // up in the dashboard sticker queue; every 5th line never got a sticker
-  const insertedItems = await db
-    .select({ id: inventoryItems.id, productId: inventoryItems.productId })
-    .from(inventoryItems)
-    .where(eq(inventoryItems.storeId, store.id));
+  const then = new Date(Date.now() - 14 * DAY);
   let stickered = 0;
-  for (const [i, item] of insertedItems.entries()) {
+  for (const [i, line] of allLines.entries()) {
     if (i % 5 === 4) continue; // needs a first sticker
-    const then = new Date(Date.now() - 14 * DAY);
     const sticker = suggestedStickerPrice(
-      fixturePrice(item.productId, "tcgplayer", "retail", then)
+      fixturePrice(line.productId, "tcgplayer", "retail", then) * line.priceFactor
     );
     if (sticker <= 0) continue;
     await db
       .update(inventoryItems)
       .set({ stickerPrice: sticker.toFixed(2), stickerUpdatedAt: then })
-      .where(eq(inventoryItems.id, item.id));
+      .where(eq(inventoryItems.id, insertedItems[i].id));
     stickered++;
   }
   console.log(`✓ shelf stickers recorded for ${stickered} lines (2 weeks stale)`);
 
-  // a couple of watchlist products (not stocked) for watchlist sweeps
-  const inventoryIds = new Set(pickSingles.map((p) => p.productId));
-  const watch = pokeSingles.filter((p) => !inventoryIds.has(p.productId)).slice(0, 3);
+  // watchlist: the booster box the owner is deciding whether to buy, plus a
+  // few singles they do not stock yet
+  const stockedIds = new Set(allLines.map((l) => l.productId));
+  const watch = [
+    byName.get("Base Set Booster Box")!,
+    ...pokeSingles.filter((p) => !stockedIds.has(p.productId)).slice(0, 3),
+  ];
   await db
     .insert(watchlistItems)
     .values(watch.map((p) => ({ storeId: store.id, productId: p.productId })));
@@ -302,7 +430,7 @@ async function main() {
   console.log("✓ reprice rules: singles peg + sealed margin guard");
 
   // --- alerts -------------------------------------------------------------------
-  const restockTarget = sealedRows[0]; // qty 2 booster box
+  const restockTarget = sealedLines[0]; // the sealed pack shelf
   const restockVelocity =
     fixtureSalesHistory(restockTarget.productId).statistics?.last24Hours?.count ?? 0;
   await db.insert(alerts).values([
@@ -327,23 +455,25 @@ async function main() {
     },
     {
       storeId: store.id,
-      name: "Booster box selling fast & low stock",
+      name: "Sealed packs selling fast & low stock",
       type: "restock_velocity",
       config: {
         product_id: restockTarget.productId,
-        max_quantity: 3,
+        max_quantity: restockTarget.quantity + 2,
         min_market_sales_24h: Math.max(1, Math.min(restockVelocity, 5)),
       },
       cooldownHours: 24,
     },
   ]);
   console.log("✓ alerts: pct_change 7d, Charizard threshold watch, restock_velocity");
+  console.log(
+    `  (${new Set(allLines.filter((l) => hasSpike(l.productId)).map((l) => l.productId)).size} stocked products carry the fixture spike -> pct_change fires)`
+  );
 
   // --- 30 days of price snapshots -------------------------------------------------
   const allSeededProducts = [
     ...new Set([
-      ...singleRows.map((r) => r.productId),
-      ...sealedRows.map((r) => r.productId),
+      ...allLines.map((l) => l.productId),
       ...watch.map((p) => p.productId),
     ]),
   ];
@@ -425,23 +555,28 @@ async function main() {
   console.log(`✓ sales stats for ${allSeededProducts.length} products`);
 
   // --- counter transactions: 2 weeks of realistic sales/buys -----------------
-  // sold at roughly sticker prices (market ± a few %), bought at 60-75% of
-  // market - this is the realized-price ledger the platform builds on
+  // sold at roughly the line's shelf price (+/- a few %), bought over the
+  // counter at 50-65% of it - this is the realized-price ledger the platform
+  // builds on. Every ticket is a single card: that is how a counter works.
   const txValues: (typeof transactions.$inferInsert)[] = [];
-  const sellable = [...singleRows.slice(0, 18), ...sealedRows.slice(0, 3)];
+  const sellable = [
+    ...allLines.filter((_, i) => i % 3 === 0).slice(0, 16),
+    ...sealedLines.slice(0, 3),
+  ];
   sellable.forEach((line, i) => {
     const salesCount = 1 + (i % 3); // 1-3 sales per item over the window
     for (let s = 0; s < salesCount; s++) {
       const daysAgo = (i * 3 + s * 5) % 14;
       const when = new Date(Date.now() - daysAgo * DAY - (i % 12) * 3600_000);
-      const market = fixturePrice(line.productId, "tcgplayer", "retail", when);
-      const realized = market * (0.96 + ((i + s) % 5) * 0.02); // 96-104% of market
+      const shelf =
+        fixturePrice(line.productId, "tcgplayer", "retail", when) * line.priceFactor;
+      const realized = shelf * (0.96 + ((i + s) % 5) * 0.02); // 96-104% of shelf
       txValues.push({
         storeId: store.id,
         productId: line.productId,
         side: "sale",
         condition: line.condition,
-        printing: line.printing,
+        printing: null,
         language: "English",
         quantity: 1,
         unitPrice: Math.max(0.25, realized).toFixed(2),
@@ -452,16 +587,17 @@ async function main() {
     }
     if (i % 4 === 0) {
       const when = new Date(Date.now() - ((i * 2) % 13) * DAY - 5 * 3600_000);
-      const market = fixturePrice(line.productId, "tcgplayer", "retail", when);
+      const shelf =
+        fixturePrice(line.productId, "tcgplayer", "retail", when) * line.priceFactor;
       txValues.push({
         storeId: store.id,
         productId: line.productId,
         side: "purchase",
         condition: line.condition,
-        printing: line.printing,
+        printing: null,
         language: "English",
-        quantity: 1 + (i % 2),
-        unitPrice: Math.max(0.1, market * (0.6 + (i % 3) * 0.075)).toFixed(2),
+        quantity: 1,
+        unitPrice: Math.max(0.1, shelf * (0.5 + (i % 3) * 0.075)).toFixed(2),
         occurredAt: when,
         source: "seed",
         recordedBy: user.id,
@@ -479,6 +615,33 @@ async function main() {
     .select({ n: sql<number>`count(*)::int` })
     .from(sql`alert_events`);
   console.log(`✓ alert evaluation: ${fired[0].n} events in the feed`);
+
+  // headline totals, so a re-seed reports the same numbers the dashboard shows
+  const [totals] = await db.execute<{
+    lines: number;
+    total_value: string;
+    singles_value: string;
+    sealed_value: string;
+    top_line: string;
+  }>(sql`
+    select count(*)::int lines,
+           round(sum(i.current_price * i.quantity), 2) total_value,
+           round(sum(i.current_price * i.quantity)
+             filter (where coalesce(p.product_type_override, p.product_type) = 'single'), 2) singles_value,
+           round(sum(i.current_price * i.quantity)
+             filter (where coalesce(p.product_type_override, p.product_type) = 'sealed'), 2) sealed_value,
+           round(max(i.current_price * i.quantity), 2) top_line
+    from inventory_items i
+    join products p on p.product_id = i.product_id
+    where i.store_id = ${store.id}
+  `).then((r) => r.rows);
+  const pct = (part: string) => ((Number(part) / Number(totals.total_value)) * 100).toFixed(1);
+  console.log(
+    `✓ store value: $${Number(totals.total_value).toLocaleString("en-US")} over ${totals.lines} lines` +
+      ` — singles $${Number(totals.singles_value).toLocaleString("en-US")} (${pct(totals.singles_value)}%)` +
+      ` / sealed $${Number(totals.sealed_value).toLocaleString("en-US")} (${pct(totals.sealed_value)}%)` +
+      `, biggest line ${pct(totals.top_line)}% of value`
+  );
 
   console.log(`
 Done! Start the app:

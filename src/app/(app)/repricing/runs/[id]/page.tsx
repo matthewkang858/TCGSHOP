@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
-import { CircleAlert, Download, Trash2 } from "lucide-react";
+import { CircleAlert, Download } from "lucide-react";
 import { z } from "zod";
 import { db } from "@/db";
 import {
@@ -14,9 +14,11 @@ import {
 } from "@/db/schema";
 import { requireStore } from "@/lib/tenancy";
 import { PageHeader } from "@/components/page-header";
+import { ProductImage } from "@/components/product-image";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { StatCard } from "@/components/ui/stat-card";
 import {
   Table,
   TableBody,
@@ -36,7 +38,7 @@ const searchSchema = z.object({
 });
 
 const SORT_OPTIONS = [
-  { value: "pct", label: "Biggest move" },
+  { value: "pct", label: "Move %" },
   { value: "flag", label: "Flagged" },
   { value: "name", label: "Name" },
   { value: "old", label: "Old $" },
@@ -114,110 +116,40 @@ export default async function RunDetailPage({
     noData: items.filter((i) => i.newPrice === null).length,
     avgChange: pcts.length ? pcts.reduce((a, b) => a + b, 0) / pcts.length : null,
   };
+  const priced = items.length - summary.noData;
+  const share = (n: number) =>
+    priced > 0 ? `${Math.round((n / priced) * 100)}% of priced` : "—";
+
+  const headerFacts = previewing
+    ? [
+        "Preview — nothing changes until you apply",
+        `${run.itemCount} lines`,
+        `${eligible} ready`,
+        pendingFlags > 0 ? `${pendingFlags} awaiting approval` : null,
+        formatDateTime(run.createdAt),
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : run.status === "applied"
+      ? `Applied ${run.appliedCount} of ${run.itemCount} lines · ${formatDateTime(run.appliedAt)}`
+      : `Discarded — no shelf price changed · ${formatDateTime(run.createdAt)}`;
 
   const sortLink = (s: string) => `/repricing/runs/${id}?sort=${s}`;
 
+  // Row identity meta: set · condition · printing · qty, plus the outgoing price.
+  const rowMeta = (item: (typeof items)[number]) =>
+    [
+      item.expansionName,
+      item.productType === "sealed" ? "Sealed" : item.condition,
+      item.printing === "Foil" ? "Foil" : null,
+      `×${item.quantity}`,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+
   return (
     <div className="space-y-4">
-      <PageHeader
-        title={`Reprice run · ${formatDateTime(run.createdAt)}`}
-        description={
-          previewing
-            ? `Preview — no shelf prices change until you hit Apply. ${eligible} of ${run.itemCount} rows are ready.`
-            : run.status === "applied"
-              ? `Applied ${run.appliedCount} price changes on ${formatDateTime(run.appliedAt)}.`
-              : "This run was discarded — nothing was changed."
-        }
-      >
-        <Badge
-          variant={
-            run.status === "applied" ? "success" : previewing ? "warning" : "outline"
-          }
-        >
-          {run.status}
-        </Badge>
-      </PageHeader>
-
-      {error ? (
-        <div className="flex items-center gap-2 rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          <CircleAlert className="h-4 w-4 shrink-0" />
-          {error}
-        </div>
-      ) : null}
-
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-        <Card>
-          <CardContent className="px-4 py-3">
-            <p className="text-xs text-muted-foreground">Increases</p>
-            <p className="text-xl font-semibold tabular-nums text-success">
-              {summary.increases}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="px-4 py-3">
-            <p className="text-xs text-muted-foreground">Decreases</p>
-            <p className="text-xl font-semibold tabular-nums text-destructive">
-              {summary.decreases}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="px-4 py-3">
-            <p className="text-xs text-muted-foreground">Flagged</p>
-            <p
-              className={cn(
-                "text-xl font-semibold tabular-nums",
-                summary.flagged > 0 && "text-warning"
-              )}
-            >
-              {summary.flagged}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="px-4 py-3">
-            <p className="text-xs text-muted-foreground">No data</p>
-            <p className="text-xl font-semibold tabular-nums text-muted-foreground">
-              {summary.noData}
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="col-span-2 sm:col-span-1">
-          <CardContent className="px-4 py-3">
-            <p className="text-xs text-muted-foreground">Avg change</p>
-            <p
-              className={cn(
-                "text-xl font-semibold tabular-nums",
-                summary.avgChange !== null && summary.avgChange > 0 && "text-success",
-                summary.avgChange !== null && summary.avgChange < 0 && "text-destructive"
-              )}
-            >
-              {formatPct(summary.avgChange)}
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        {previewing ? (
-          <>
-            <form action={applyRunAction}>
-              <input type="hidden" name="runId" value={run.id} />
-              <Button type="submit" disabled={eligible === 0}>
-                Apply {eligible} changes
-              </Button>
-            </form>
-            {pendingFlags > 0 ? (
-              <form action={approveAllFlaggedAction}>
-                <input type="hidden" name="runId" value={run.id} />
-                <Button type="submit" variant="outline">
-                  Approve all {pendingFlags} flagged
-                </Button>
-              </form>
-            ) : null}
-          </>
-        ) : null}
+      <PageHeader title="Reprice run" description={headerFacts}>
         <Button asChild variant="outline">
           <a href={`/repricing/runs/${run.id}/export`} download>
             <Download />
@@ -225,136 +157,339 @@ export default async function RunDetailPage({
           </a>
         </Button>
         {previewing ? (
-          <>
-            <form id="discard-run" action={discardRunAction} className="hidden">
-              <input type="hidden" name="runId" value={run.id} />
-            </form>
-            <ConfirmButton
-              type="submit"
-              form="discard-run"
-              variant="ghost"
-              className="ml-auto text-destructive hover:text-destructive"
-              message="Discard this preview run? No prices were changed."
-            >
-              <Trash2 />
-              Discard
-            </ConfirmButton>
-          </>
+          <form action={applyRunAction}>
+            <input type="hidden" name="runId" value={run.id} />
+            <Button type="submit" disabled={eligible === 0}>
+              Apply {eligible} changes
+            </Button>
+          </form>
         ) : null}
-      </div>
+      </PageHeader>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs text-muted-foreground">Sort by</span>
-        <div className="inline-flex rounded-md border bg-card p-0.5">
-          {SORT_OPTIONS.map((s) => (
-            <Link
-              key={s.value}
-              href={sortLink(s.value)}
-              className={cn(
-                "rounded-sm px-2.5 py-1 text-xs whitespace-nowrap transition-colors",
-                sort === s.value
-                  ? "bg-accent font-medium text-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              {s.label}
-            </Link>
-          ))}
+      {error ? (
+        <div className="flex items-center gap-2 rounded-lg border border-destructive/25 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <CircleAlert className="size-4 shrink-0" />
+          {error}
         </div>
+      ) : null}
+
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-5 md:gap-4">
+        <StatCard
+          label="Increases"
+          value={summary.increases}
+          sub={share(summary.increases)}
+        />
+        <StatCard
+          label="Decreases"
+          value={summary.decreases}
+          sub={share(summary.decreases)}
+        />
+        <StatCard
+          label="Flagged"
+          value={summary.flagged}
+          sub={
+            pendingFlags > 0
+              ? `${pendingFlags} awaiting approval`
+              : summary.flagged > 0
+                ? "all approved"
+                : "—"
+          }
+          tone={pendingFlags > 0 ? "negative" : "neutral"}
+        />
+        <StatCard
+          label="No data"
+          value={summary.noData}
+          sub={summary.noData > 0 ? "skipped on apply" : "—"}
+        />
+        <StatCard
+          className="col-span-2 md:col-span-1"
+          label="Avg change"
+          value={formatPct(summary.avgChange)}
+          sub={`across ${pcts.length} lines`}
+        />
       </div>
 
-      <Card>
+      {items.length > 1 ? (
+        <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:px-0">
+          <div className="inline-flex rounded-md border border-border/60 bg-card p-0.5">
+            {SORT_OPTIONS.map((s) => (
+              <Link
+                key={s.value}
+                href={sortLink(s.value)}
+                aria-current={sort === s.value ? "true" : undefined}
+                className={cn(
+                  "flex h-8 items-center rounded-sm px-2.5 text-xs whitespace-nowrap transition-colors",
+                  sort === s.value
+                    ? "bg-muted font-medium text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {s.label}
+              </Link>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      <Card className="overflow-hidden">
+        <CardHeader>
+          <div className="flex min-w-0 items-baseline gap-2">
+            <CardTitle>Changes</CardTitle>
+            <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+              {items.length}
+            </span>
+          </div>
+          {previewing && pendingFlags > 0 ? (
+            <form action={approveAllFlaggedAction} className="shrink-0">
+              <input type="hidden" name="runId" value={run.id} />
+              <button
+                type="submit"
+                className="text-xs font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                Approve all {pendingFlags} flagged
+              </button>
+            </form>
+          ) : null}
+        </CardHeader>
+
         <CardContent className="p-0">
-          <Table className="min-w-[880px]">
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-12">Apply</TableHead>
-                <TableHead>Product</TableHead>
-                <TableHead>Condition</TableHead>
-                <TableHead className="text-right">Qty</TableHead>
-                <TableHead className="text-right">Basis</TableHead>
-                <TableHead className="text-right">Old</TableHead>
-                <TableHead className="text-right">New</TableHead>
-                <TableHead className="text-right">Δ%</TableHead>
-                <TableHead>Rule / flags</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {items.map((item) => {
-                const pct = item.pctChange !== null ? Number(item.pctChange) : null;
-                return (
-                  <TableRow key={item.id} className={cn(item.excluded && "opacity-45")}>
-                    <TableCell>
-                      <ExcludeToggle
-                        runId={run.id}
-                        itemId={item.id}
-                        excluded={item.excluded}
-                        disabled={!previewing || item.newPrice === null}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Link
-                        href={`/products/${item.productId}`}
-                        className="font-medium text-primary hover:underline"
-                      >
-                        {item.productName}
-                      </Link>
-                      <span className="ml-1 text-xs text-muted-foreground">
-                        {item.expansionName}
-                        {item.productType === "sealed" ? " · sealed" : ""}
-                        {item.printing === "Foil" ? " · foil" : ""}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">{item.condition}</TableCell>
-                    <TableCell className="text-right tabular-nums">{item.quantity}</TableCell>
-                    <TableCell className="text-right tabular-nums text-muted-foreground">
-                      {formatMoney(item.basisValue)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatMoney(item.oldPrice)}
-                    </TableCell>
-                    <TableCell className="text-right font-medium tabular-nums">
-                      {formatMoney(item.newPrice)}
-                    </TableCell>
-                    <TableCell
-                      className={cn(
-                        "text-right tabular-nums",
-                        pct !== null && pct > 0 && "text-success",
-                        pct !== null && pct < 0 && "text-destructive"
-                      )}
-                    >
-                      {formatPct(item.pctChange)}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        {item.flagged && item.newPrice !== null ? (
-                          <>
-                            <Badge variant="warning" title={item.flagReason ?? undefined}>
-                              flagged
-                            </Badge>
-                            <ApproveButton
+          {items.length === 0 ? (
+            <p className="px-4 py-10 text-center text-xs text-muted-foreground">
+              This run matched no inventory lines.
+            </p>
+          ) : (
+            <>
+              {/* Desktop table */}
+              <div className="hidden md:block">
+                <Table>
+                  <colgroup>
+                    <col className="w-[44px]" />
+                    <col className="w-[36%]" />
+                    <col className="w-[13%]" />
+                    <col className="w-[13%]" />
+                    <col className="w-[14%]" />
+                    <col className="w-[12%]" />
+                    <col className="w-[96px]" />
+                  </colgroup>
+                  <TableHeader sticky={items.length > 20}>
+                    <TableRow className="h-9 hover:bg-transparent">
+                      <TableHead aria-label="Include in apply" />
+                      <TableHead>Product</TableHead>
+                      <TableHead className="text-right">Basis</TableHead>
+                      <TableHead className="text-right">Old</TableHead>
+                      <TableHead className="text-right">New</TableHead>
+                      <TableHead className="text-right">Δ%</TableHead>
+                      <TableHead aria-label="Actions" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {items.map((item) => {
+                      const pct = item.pctChange !== null ? Number(item.pctChange) : null;
+                      const isFlagged = item.flagged && item.newPrice !== null;
+                      const needsOk = isFlagged && !item.approved && !item.excluded;
+                      return (
+                        <TableRow
+                          key={item.id}
+                          className={cn("group", item.excluded && "opacity-45")}
+                          title={item.ruleName ?? undefined}
+                        >
+                          <TableCell>
+                            <ExcludeToggle
                               runId={run.id}
                               itemId={item.id}
-                              approved={item.approved}
-                              disabled={!previewing || item.excluded}
+                              excluded={item.excluded}
+                              disabled={!previewing || item.newPrice === null}
                             />
-                          </>
-                        ) : item.newPrice === null ? (
-                          <Badge variant="outline" title={item.flagReason ?? undefined}>
-                            no data
-                          </Badge>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">{item.ruleName}</span>
-                        )}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex min-w-0 items-center gap-3">
+                              <ProductImage
+                                productId={item.productId}
+                                name={item.productName}
+                                className="h-10 w-[29px] shrink-0 rounded-[3px] border border-border/70 bg-muted"
+                              />
+                              <div className="min-w-0">
+                                <div className="flex min-w-0 items-center">
+                                  <Link
+                                    href={`/products/${item.productId}`}
+                                    title={item.productName}
+                                    className="truncate text-sm font-medium text-foreground hover:underline"
+                                  >
+                                    {item.productName}
+                                  </Link>
+                                  {isFlagged ? (
+                                    <span className="ml-2 shrink-0">
+                                      <Badge
+                                        variant="attention"
+                                        title={item.flagReason ?? undefined}
+                                      >
+                                        flagged
+                                      </Badge>
+                                    </span>
+                                  ) : item.newPrice === null ? (
+                                    <span className="ml-2 shrink-0">
+                                      <Badge
+                                        variant="neutral"
+                                        title={item.flagReason ?? undefined}
+                                      >
+                                        no data
+                                      </Badge>
+                                    </span>
+                                  ) : null}
+                                </div>
+                                <p
+                                  className="truncate text-xs text-muted-foreground"
+                                  title={
+                                    isFlagged
+                                      ? (item.flagReason ?? undefined)
+                                      : rowMeta(item)
+                                  }
+                                >
+                                  {isFlagged && item.flagReason
+                                    ? item.flagReason
+                                    : rowMeta(item)}
+                                </p>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
+                            {formatMoney(item.basisValue)}
+                          </TableCell>
+                          <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
+                            {formatMoney(item.oldPrice)}
+                          </TableCell>
+                          <TableCell className="text-right text-sm font-medium tabular-nums text-foreground">
+                            {formatMoney(item.newPrice)}
+                          </TableCell>
+                          <TableCell
+                            className={cn(
+                              "text-right text-xs font-medium tabular-nums",
+                              pct === null && "text-muted-foreground",
+                              pct !== null && pct > 0 && "text-success",
+                              pct !== null && pct < 0 && "text-destructive"
+                            )}
+                          >
+                            {formatPct(item.pctChange)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {isFlagged ? (
+                              <div
+                                className={cn(
+                                  "flex justify-end transition-opacity",
+                                  // A flagged row keeps its control at rest — it is
+                                  // the one thing the clerk has to decide.
+                                  !needsOk &&
+                                    "md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100"
+                                )}
+                              >
+                                <ApproveButton
+                                  runId={run.id}
+                                  itemId={item.id}
+                                  approved={item.approved}
+                                  disabled={!previewing || item.excluded}
+                                />
+                              </div>
+                            ) : null}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* Phone: the same rows at 64px, no horizontal scroll. */}
+              <div className="md:hidden">
+                {items.map((item) => {
+                  const pct = item.pctChange !== null ? Number(item.pctChange) : null;
+                  const isFlagged = item.flagged && item.newPrice !== null;
+                  return (
+                    <div
+                      key={item.id}
+                      className={cn(
+                        "flex h-16 items-center gap-3 border-b border-border/60 px-4 last:border-0",
+                        item.excluded && "opacity-45"
+                      )}
+                    >
+                      <div className="flex w-4 shrink-0 items-center justify-center">
+                        <ExcludeToggle
+                          runId={run.id}
+                          itemId={item.id}
+                          excluded={item.excluded}
+                          disabled={!previewing || item.newPrice === null}
+                        />
                       </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex min-w-0 items-center">
+                          <Link
+                            href={`/products/${item.productId}`}
+                            className="truncate text-sm font-medium text-foreground hover:underline"
+                          >
+                            {item.productName}
+                          </Link>
+                          {isFlagged ? (
+                            <span className="ml-2 shrink-0">
+                              <Badge variant="attention">flagged</Badge>
+                            </span>
+                          ) : null}
+                        </div>
+                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                          {item.newPrice === null
+                            ? (item.flagReason ?? "no price data")
+                            : `${rowMeta(item)} · was ${formatMoney(item.oldPrice)}`}
+                        </p>
+                      </div>
+                      <div className="w-[76px] shrink-0 text-right">
+                        <p className="truncate text-sm font-medium tabular-nums text-foreground">
+                          {formatMoney(item.newPrice)}
+                        </p>
+                        <p
+                          className={cn(
+                            "mt-0.5 truncate text-xs font-medium tabular-nums",
+                            pct === null && "text-muted-foreground",
+                            pct !== null && pct > 0 && "text-success",
+                            pct !== null && pct < 0 && "text-destructive"
+                          )}
+                        >
+                          {formatPct(item.pctChange)}
+                        </p>
+                      </div>
+                      {isFlagged ? (
+                        <div className="flex w-[84px] shrink-0 justify-end">
+                          <ApproveButton
+                            runId={run.id}
+                            itemId={item.id}
+                            approved={item.approved}
+                            disabled={!previewing || item.excluded}
+                          />
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
+
+      {previewing ? (
+        <div className="flex justify-end">
+          {/* Destructive lives away from the rows and still routes through confirm. */}
+          <form id="discard-run" action={discardRunAction} className="hidden">
+            <input type="hidden" name="runId" value={run.id} />
+          </form>
+          <ConfirmButton
+            type="submit"
+            form="discard-run"
+            variant="ghost"
+            className="text-destructive hover:text-destructive"
+            message="Discard this preview run? No prices were changed."
+          >
+            Discard this run
+          </ConfirmButton>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { desc, eq, isNull, and, count } from "drizzle-orm";
 import {
   ArrowLeftRight,
@@ -14,12 +13,13 @@ import { db } from "@/db";
 import { alertEvents, alerts, expansions, products } from "@/db/schema";
 import { requireStore } from "@/lib/tenancy";
 import { EmptyState, PageHeader } from "@/components/page-header";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { cn, formatDateTime } from "@/lib/utils";
+import { DataRow, type RowTone } from "@/components/ui/data-row";
+import { Section } from "@/components/ui/section";
+import { formatDateTime, formatMoney, formatPct } from "@/lib/utils";
 import { AlertForm } from "./alert-form";
-import { deleteAlertAction, markEventsReadAction, toggleAlertAction } from "./actions";
+import { AlertRowActions } from "./alert-row-actions";
+import { markEventsReadAction } from "./actions";
 
 const TYPE_LABEL: Record<string, string> = {
   threshold_cross: "Price threshold",
@@ -37,9 +37,10 @@ const TYPE_ICON: Record<string, LucideIcon> = {
   restock_velocity: PackagePlus,
 };
 
-function TypeIcon({ type, className }: { type: string; className?: string }) {
+/** Alert type is carried by this icon in the row's leading rail — not a badge. */
+function TypeIcon({ type }: { type: string }) {
   const Icon = TYPE_ICON[type] ?? Bell;
-  return <Icon className={className} aria-hidden />;
+  return <Icon className="size-4 text-muted-foreground" aria-hidden />;
 }
 
 function configSummary(type: string, config: Record<string, unknown>): string {
@@ -58,6 +59,8 @@ function configSummary(type: string, config: Record<string, unknown>): string {
       return "";
   }
 }
+
+const FEED_LIMIT = 50;
 
 export default async function AlertsPage() {
   const ctx = await requireStore();
@@ -87,7 +90,7 @@ export default async function AlertsPage() {
     .innerJoin(expansions, eq(expansions.groupId, products.groupId))
     .where(eq(alerts.storeId, ctx.storeId))
     .orderBy(desc(alertEvents.firedAt))
-    .limit(100);
+    .limit(FEED_LIMIT);
 
   const [{ value: unread }] = await db
     .select({ value: count() })
@@ -95,12 +98,18 @@ export default async function AlertsPage() {
     .innerJoin(alerts, eq(alerts.id, alertEvents.alertId))
     .where(and(eq(alerts.storeId, ctx.storeId), isNull(alertEvents.readAt)));
 
+  const activeCount = storeAlerts.filter((a) => a.active).length;
+  const facts = [
+    `${storeAlerts.length} rule${storeAlerts.length === 1 ? "" : "s"}`,
+    activeCount < storeAlerts.length ? `${activeCount} active` : null,
+    `${unread.toLocaleString()} unread`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title="Alerts"
-        description="Watchlist and inventory triggers evaluated after every price sweep. Delivered in-app, by email, and to Discord."
-      >
+    <div className="space-y-4">
+      <PageHeader title="Alerts" description={facts}>
         {unread > 0 ? (
           <form action={markEventsReadAction}>
             <Button variant="outline" type="submit">
@@ -111,144 +120,115 @@ export default async function AlertsPage() {
         ) : null}
       </PageHeader>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <div className="space-y-6">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <div className="space-y-4">
           <AlertForm />
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Your alerts ({storeAlerts.length})</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {storeAlerts.length === 0 ? (
-                <p className="py-4 text-center text-sm text-muted-foreground">
-                  No alerts yet — create one above. Try a 7-day 20% move on your whole
-                  inventory, or a restock signal on a booster box.
-                </p>
-              ) : (
-                storeAlerts.map((a) => (
-                  <div
-                    key={a.id}
-                    className="flex items-center justify-between gap-3 rounded-md border px-3 py-1.5"
-                  >
-                    <div className="flex min-w-0 items-center gap-2.5">
-                      <TypeIcon
-                        type={a.type}
-                        className="h-4 w-4 shrink-0 text-muted-foreground"
-                      />
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="truncate text-sm font-medium">{a.name}</span>
-                          <Badge variant="secondary">{TYPE_LABEL[a.type]}</Badge>
-                          {!a.active ? <Badge variant="outline">paused</Badge> : null}
-                        </div>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {configSummary(a.type, a.config as Record<string, unknown>)} ·
-                          cooldown {a.cooldownHours}h
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-1">
-                      <form action={toggleAlertAction}>
-                        <input type="hidden" name="alertId" value={a.id} />
-                        <input type="hidden" name="active" value={a.active ? "false" : "true"} />
-                        <Button variant="ghost" size="sm" type="submit" className="text-xs">
-                          {a.active ? "pause" : "resume"}
-                        </Button>
-                      </form>
-                      <form action={deleteAlertAction}>
-                        <input type="hidden" name="alertId" value={a.id} />
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          type="submit"
-                          className="text-xs text-destructive"
-                        >
-                          delete
-                        </Button>
-                      </form>
-                    </div>
-                  </div>
-                ))
-              )}
-            </CardContent>
-          </Card>
+          <Section
+            title="Your alerts"
+            subtitle={storeAlerts.length ? String(storeAlerts.length) : undefined}
+          >
+            {storeAlerts.length === 0 ? (
+              <p className="p-4 text-sm text-muted-foreground">
+                No alerts yet. Try a 7-day 20% move across your inventory, or a restock signal
+                on a booster box.
+              </p>
+            ) : (
+              storeAlerts.map((a) => (
+                <DataRow
+                  key={a.id}
+                  image={<TypeIcon type={a.type} />}
+                  title={
+                    a.active ? (
+                      a.name
+                    ) : (
+                      <span className="text-muted-foreground">{a.name}</span>
+                    )
+                  }
+                  meta={[
+                    a.active ? null : "Paused",
+                    TYPE_LABEL[a.type],
+                    configSummary(a.type, a.config as Record<string, unknown>),
+                    `cooldown ${a.cooldownHours}h`,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                  actions={
+                    <AlertRowActions alertId={a.id} alertName={a.name} active={a.active} />
+                  }
+                />
+              ))
+            )}
+          </Section>
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Event feed</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {events.length === 0 ? (
+        <Section
+          title="Event feed"
+          subtitle={events.length ? `last ${events.length}` : undefined}
+        >
+          {events.length === 0 ? (
+            <div className="p-4">
               <EmptyState
-                icon={<Bell className="h-8 w-8" />}
+                icon={<Bell />}
                 title="No alerts have fired yet"
-                description="Events appear here after price sweeps detect movement matching your alerts. Run the worker (pnpm worker) so hourly/nightly sweeps happen."
+                description="Events appear here once a price sweep detects movement matching your alerts. Run the worker so the hourly and nightly sweeps happen."
               />
-            ) : (
-              <div className="max-h-[42rem] space-y-2 overflow-y-auto">
-                {events.map((e) => {
-                  const p = e.payload as Record<string, unknown>;
-                  return (
-                    <div
-                      key={e.id}
-                      className={cn(
-                        "rounded-md border border-l-2 px-3 py-1.5",
-                        !e.readAt
-                          ? "border-primary/40 border-l-primary bg-primary/5"
-                          : "border-l-border"
-                      )}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="flex min-w-0 items-center gap-1.5 text-sm font-medium">
-                          <TypeIcon
-                            type={e.alertType}
-                            className={cn(
-                              "h-3.5 w-3.5 shrink-0",
-                              !e.readAt ? "text-primary" : "text-muted-foreground"
-                            )}
-                          />
-                          <span className="truncate">{e.alertName}</span>
-                          <Badge variant="secondary" className="shrink-0">
-                            {TYPE_LABEL[e.alertType]}
-                          </Badge>
-                        </span>
-                        <span className="shrink-0 text-xs text-muted-foreground">
-                          {formatDateTime(e.firedAt)}
-                        </span>
-                      </div>
-                      <p className="mt-0.5 text-sm">
-                        <Link
-                          href={`/products/${e.productId}`}
-                          className="font-medium text-primary hover:underline"
-                        >
-                          {e.productName}
-                        </Link>{" "}
-                        <span className="text-muted-foreground">· {e.setName}</span>
-                      </p>
-                      <p className="mt-0.5 text-xs text-muted-foreground">
-                        {"pct_change" in p ? `Δ ${p.pct_change}% over ${p.window} · ` : ""}
-                        {"market" in p && p.market != null ? `market $${p.market}` : ""}
-                        {"buylist" in p && p.buylist != null
-                          ? ` · buylist $${p.buylist} (${p.spread_pct}%)`
-                          : ""}
-                        {"sales_24h" in p ? ` · ${p.sales_24h} sales/24h` : ""}
-                        {"quantity" in p ? ` · ${p.quantity} left in stock` : ""}
-                        {e.delivered?.discord
-                          ? e.delivered.discord.ok
-                            ? " · discord ✓"
-                            : " · discord ✗"
-                          : ""}
-                        {e.delivered?.email ? (e.delivered.email.ok ? " · email ✓" : " · email ✗") : ""}
-                      </p>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+            </div>
+          ) : (
+            events.map((e) => {
+              const p = e.payload as Record<string, unknown>;
+              const market = p.market != null ? Number(p.market) : null;
+              const pct = p.pct_change != null ? Number(p.pct_change) : null;
+
+              let valueMeta: string | null = null;
+              let tone: RowTone = "neutral";
+              if (pct != null) {
+                valueMeta = `${formatPct(pct)} ${String(p.window ?? "")}`.trim();
+                tone = pct >= 0 ? "positive" : "negative";
+              } else if (p.sales_24h != null) {
+                valueMeta = `${p.sales_24h} sold/24h`;
+              } else if (p.spread_pct != null) {
+                valueMeta = `${p.spread_pct}% spread`;
+              }
+
+              const failed =
+                e.delivered?.discord?.ok === false || e.delivered?.email?.ok === false;
+
+              return (
+                <DataRow
+                  key={e.id}
+                  href={`/products/${e.productId}`}
+                  image={<TypeIcon type={e.alertType} />}
+                  title={
+                    e.readAt ? (
+                      <span className="text-muted-foreground">{e.alertName}</span>
+                    ) : (
+                      e.alertName
+                    )
+                  }
+                  meta={[
+                    e.productName,
+                    e.setName,
+                    p.quantity != null ? `${p.quantity} left in stock` : null,
+                    formatDateTime(e.firedAt),
+                    failed ? "delivery failed" : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                  value={
+                    market != null ? (
+                      formatMoney(market)
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )
+                  }
+                  valueMeta={valueMeta ?? undefined}
+                  tone={tone}
+                />
+              );
+            })
+          )}
+        </Section>
       </div>
     </div>
   );
