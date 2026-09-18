@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, CircleAlert, FileUp, HelpCircle, Loader2 } from "lucide-react";
+import { Check, CheckCircle2, CircleAlert, FileDown, FileUp, HelpCircle, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -159,6 +159,17 @@ export function ImportWizard() {
                 disabled={busy}
               />
             </label>
+            <p className="text-center text-sm text-muted-foreground">
+              No export handy?{" "}
+              <a
+                href="/api/sample-inventory.csv"
+                className="inline-flex items-center gap-1 text-primary hover:underline"
+              >
+                <FileDown className="h-3.5 w-3.5" />
+                Download a sample CSV
+              </a>{" "}
+              to try the import.
+            </p>
           </CardContent>
         </Card>
       ) : null}
@@ -280,32 +291,60 @@ export function ImportWizard() {
 
 function StepIndicator({ step }: { step: Step }) {
   const steps: { key: Step; label: string }[] = [
-    { key: "upload", label: "1. Upload" },
-    { key: "map", label: "2. Map columns" },
-    { key: "review", label: "3. Review matches" },
-    { key: "done", label: "4. Done" },
+    { key: "upload", label: "Upload" },
+    { key: "map", label: "Map columns" },
+    { key: "review", label: "Review matches" },
+    { key: "done", label: "Done" },
   ];
   const idx = steps.findIndex((s) => s.key === step);
   return (
-    <div className="flex items-center gap-2 text-sm">
+    <div className="flex items-center gap-1.5 text-sm sm:gap-2">
       {steps.map((s, i) => (
         <React.Fragment key={s.key}>
-          {i > 0 ? <span className="text-muted-foreground">→</span> : null}
+          {i > 0 ? <span className="h-px w-3 shrink-0 bg-border sm:w-5" aria-hidden /> : null}
           <span
             className={cn(
-              "rounded-full px-3 py-1",
-              i === idx
-                ? "bg-primary text-primary-foreground"
-                : i < idx
-                  ? "bg-primary/10 text-primary"
-                  : "bg-muted text-muted-foreground"
+              "flex items-center gap-1.5",
+              i === idx ? "font-medium text-foreground" : "text-muted-foreground"
             )}
           >
-            {s.label}
+            <span
+              className={cn(
+                "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
+                i === idx
+                  ? "bg-primary text-primary-foreground"
+                  : i < idx
+                    ? "bg-primary/10 text-primary"
+                    : "bg-muted text-muted-foreground"
+              )}
+            >
+              {i < idx ? <Check className="h-3.5 w-3.5" /> : i + 1}
+            </span>
+            {/* below sm, only the current step's label fits comfortably */}
+            <span className={cn(i === idx ? "inline" : "hidden sm:inline")}>{s.label}</span>
           </span>
         </React.Fragment>
       ))}
     </div>
+  );
+}
+
+/** Small count pill for tab labels; tone is muted when the count is zero. */
+function CountChip({ n, tone }: { n: number; tone: "success" | "warning" | "destructive" }) {
+  const tones: Record<typeof tone, string> = {
+    success: "bg-success/15 text-success-foreground",
+    warning: "bg-warning/15 text-warning-foreground",
+    destructive: "bg-destructive/15 text-destructive",
+  };
+  return (
+    <span
+      className={cn(
+        "ml-1.5 inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums leading-none",
+        n === 0 ? "bg-muted-foreground/10 text-muted-foreground" : tones[tone]
+      )}
+    >
+      {n.toLocaleString()}
+    </span>
   );
 }
 
@@ -359,10 +398,19 @@ function ReviewStep({
       </CardHeader>
       <CardContent className="space-y-4">
         <Tabs defaultValue={match.ambiguous.length > 0 ? "ambiguous" : "matched"}>
-          <TabsList>
-            <TabsTrigger value="matched">Matched ({match.matched.length})</TabsTrigger>
-            <TabsTrigger value="ambiguous">Ambiguous ({match.ambiguous.length})</TabsTrigger>
-            <TabsTrigger value="unmatched">Unmatched ({match.unmatched.length})</TabsTrigger>
+          <TabsList className="h-auto max-w-full flex-wrap justify-start">
+            <TabsTrigger value="matched">
+              Matched
+              <CountChip n={match.matched.length} tone="success" />
+            </TabsTrigger>
+            <TabsTrigger value="ambiguous">
+              Ambiguous
+              <CountChip n={match.ambiguous.length} tone="warning" />
+            </TabsTrigger>
+            <TabsTrigger value="unmatched">
+              Unmatched
+              <CountChip n={match.unmatched.length + match.rowErrors.length} tone="destructive" />
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="matched">

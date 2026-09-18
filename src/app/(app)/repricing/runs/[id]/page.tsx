@@ -27,12 +27,21 @@ import {
 } from "@/components/ui/table";
 import { cn, formatDateTime, formatMoney, formatPct } from "@/lib/utils";
 import { applyRunAction, approveAllFlaggedAction, discardRunAction } from "../../actions";
+import { ConfirmButton } from "../../confirm-button";
 import { ApproveButton, ExcludeToggle } from "./run-item-toggles";
 
 const searchSchema = z.object({
   sort: z.enum(["pct", "name", "old", "new", "flag"]).default("pct"),
   error: z.string().max(300).optional(),
 });
+
+const SORT_OPTIONS = [
+  { value: "pct", label: "Biggest move" },
+  { value: "flag", label: "Flagged" },
+  { value: "name", label: "Name" },
+  { value: "old", label: "Old $" },
+  { value: "new", label: "New $" },
+] as const;
 
 export default async function RunDetailPage({
   params,
@@ -95,6 +104,17 @@ export default async function RunDetailPage({
     (i) => i.flagged && !i.approved && !i.excluded && i.newPrice !== null
   ).length;
 
+  const pcts = items
+    .filter((i) => i.pctChange !== null)
+    .map((i) => Number(i.pctChange));
+  const summary = {
+    increases: pcts.filter((p) => p > 0).length,
+    decreases: pcts.filter((p) => p < 0).length,
+    flagged: items.filter((i) => i.flagged && i.newPrice !== null).length,
+    noData: items.filter((i) => i.newPrice === null).length,
+    avgChange: pcts.length ? pcts.reduce((a, b) => a + b, 0) / pcts.length : null,
+  };
+
   const sortLink = (s: string) => `/repricing/runs/${id}?sort=${s}`;
 
   return (
@@ -103,10 +123,10 @@ export default async function RunDetailPage({
         title={`Reprice run · ${formatDateTime(run.createdAt)}`}
         description={
           previewing
-            ? `Preview — nothing has been applied yet. ${eligible} of ${run.itemCount} rows will apply.`
+            ? `Preview — no shelf prices change until you hit Apply. ${eligible} of ${run.itemCount} rows are ready.`
             : run.status === "applied"
               ? `Applied ${run.appliedCount} price changes on ${formatDateTime(run.appliedAt)}.`
-              : "This run was discarded."
+              : "This run was discarded — nothing was changed."
         }
       >
         <Badge
@@ -125,6 +145,60 @@ export default async function RunDetailPage({
         </div>
       ) : null}
 
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+        <Card>
+          <CardContent className="px-4 py-3">
+            <p className="text-xs text-muted-foreground">Increases</p>
+            <p className="text-xl font-semibold tabular-nums text-success">
+              {summary.increases}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="px-4 py-3">
+            <p className="text-xs text-muted-foreground">Decreases</p>
+            <p className="text-xl font-semibold tabular-nums text-destructive">
+              {summary.decreases}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="px-4 py-3">
+            <p className="text-xs text-muted-foreground">Flagged</p>
+            <p
+              className={cn(
+                "text-xl font-semibold tabular-nums",
+                summary.flagged > 0 && "text-warning"
+              )}
+            >
+              {summary.flagged}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="px-4 py-3">
+            <p className="text-xs text-muted-foreground">No data</p>
+            <p className="text-xl font-semibold tabular-nums text-muted-foreground">
+              {summary.noData}
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="col-span-2 sm:col-span-1">
+          <CardContent className="px-4 py-3">
+            <p className="text-xs text-muted-foreground">Avg change</p>
+            <p
+              className={cn(
+                "text-xl font-semibold tabular-nums",
+                summary.avgChange !== null && summary.avgChange > 0 && "text-success",
+                summary.avgChange !== null && summary.avgChange < 0 && "text-destructive"
+              )}
+            >
+              {formatPct(summary.avgChange)}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
       <div className="flex flex-wrap items-center gap-2">
         {previewing ? (
           <>
@@ -142,13 +216,6 @@ export default async function RunDetailPage({
                 </Button>
               </form>
             ) : null}
-            <form action={discardRunAction}>
-              <input type="hidden" name="runId" value={run.id} />
-              <Button type="submit" variant="ghost" className="text-destructive">
-                <Trash2 />
-                Discard
-              </Button>
-            </form>
           </>
         ) : null}
         <Button asChild variant="outline">
@@ -157,25 +224,48 @@ export default async function RunDetailPage({
             Export CSV
           </a>
         </Button>
-        <span className="ml-auto text-sm text-muted-foreground">
-          Sort:{" "}
-          {(["pct", "flag", "name", "old", "new"] as const).map((s, i) => (
-            <span key={s}>
-              {i > 0 ? " · " : ""}
-              <Link
-                href={sortLink(s)}
-                className={cn("hover:underline", sort === s && "font-semibold text-foreground")}
-              >
-                {s === "pct" ? "Δ%" : s}
-              </Link>
-            </span>
+        {previewing ? (
+          <>
+            <form id="discard-run" action={discardRunAction} className="hidden">
+              <input type="hidden" name="runId" value={run.id} />
+            </form>
+            <ConfirmButton
+              type="submit"
+              form="discard-run"
+              variant="ghost"
+              className="ml-auto text-destructive hover:text-destructive"
+              message="Discard this preview run? No prices were changed."
+            >
+              <Trash2 />
+              Discard
+            </ConfirmButton>
+          </>
+        ) : null}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-muted-foreground">Sort by</span>
+        <div className="inline-flex rounded-md border bg-card p-0.5">
+          {SORT_OPTIONS.map((s) => (
+            <Link
+              key={s.value}
+              href={sortLink(s.value)}
+              className={cn(
+                "rounded-sm px-2.5 py-1 text-xs whitespace-nowrap transition-colors",
+                sort === s.value
+                  ? "bg-accent font-medium text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {s.label}
+            </Link>
           ))}
-        </span>
+        </div>
       </div>
 
       <Card>
         <CardContent className="p-0">
-          <Table>
+          <Table className="min-w-[880px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-12">Apply</TableHead>

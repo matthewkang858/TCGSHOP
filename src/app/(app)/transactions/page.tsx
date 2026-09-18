@@ -1,12 +1,14 @@
+import * as React from "react";
 import Link from "next/link";
 import { desc, eq, sql } from "drizzle-orm";
-import { Receipt, Trash2 } from "lucide-react";
+import { Receipt } from "lucide-react";
+import { z } from "zod";
 import { db } from "@/db";
 import { expansions, products, transactions } from "@/db/schema";
 import { requireStore } from "@/lib/tenancy";
 import { EmptyState, PageHeader } from "@/components/page-header";
+import { ProductImage } from "@/components/product-image";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -16,12 +18,86 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { cn, formatDateTime, formatMoney } from "@/lib/utils";
+import type { PickedProduct } from "@/components/product-picker";
+import { cn, formatDate, formatMoney } from "@/lib/utils";
 import { RecordForm } from "./record-form";
-import { deleteTransactionAction } from "./actions";
+import { DeleteTransactionButton } from "./delete-button";
 
-export default async function TransactionsPage() {
+// Quick-sell prefill params (cross-team contract): garbage values are ignored,
+// the form just renders empty.
+const prefillSchema = z.object({
+  productId: z.coerce.number().int().positive().optional().catch(undefined),
+  side: z.enum(["sale", "purchase"]).optional().catch(undefined),
+  condition: z.string().trim().min(1).max(40).optional().catch(undefined),
+  printing: z.enum(["", "Normal", "Foil"]).optional().catch(undefined),
+});
+
+function firstParam(v: string | string[] | undefined): string | undefined {
+  return Array.isArray(v) ? v[0] : v;
+}
+
+async function resolvePrefill(sp: Record<string, string | string[] | undefined>): Promise<{
+  initialPick: PickedProduct | null;
+  side?: "sale" | "purchase";
+  condition?: string;
+  printing?: "" | "Normal" | "Foil";
+}> {
+  const parsed = prefillSchema.parse({
+    productId: firstParam(sp.productId),
+    side: firstParam(sp.side),
+    condition: firstParam(sp.condition),
+    printing: firstParam(sp.printing),
+  });
+  let initialPick: PickedProduct | null = null;
+  if (parsed.productId != null) {
+    const [p] = await db
+      .select({
+        productId: products.productId,
+        name: products.name,
+        productType: products.productType,
+        productTypeOverride: products.productTypeOverride,
+        expansionName: expansions.name,
+      })
+      .from(products)
+      .innerJoin(expansions, eq(expansions.groupId, products.groupId))
+      .where(eq(products.productId, parsed.productId))
+      .limit(1);
+    if (p) {
+      initialPick = {
+        id: p.productId,
+        label: `${p.name} · ${p.expansionName}`,
+        productType: p.productTypeOverride ?? p.productType,
+      };
+    }
+  }
+  return {
+    initialPick,
+    side: parsed.side,
+    condition: parsed.condition,
+    printing: parsed.printing,
+  };
+}
+
+function formatTime(d: Date): string {
+  return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+}
+
+function dayLabel(d: Date, now: Date): string {
+  const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const diffDays = Math.round((today.getTime() - day.getTime()) / 86_400_000);
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  return formatDate(d);
+}
+
+export default async function TransactionsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const ctx = await requireStore();
+  const prefill = await resolvePrefill(await searchParams);
 
   const [stats] = await db.execute<{
     sales_7d: string;
@@ -53,6 +129,7 @@ export default async function TransactionsPage() {
       source: transactions.source,
       productId: products.productId,
       productName: products.name,
+      productImageUrl: products.imageUrl,
       expansionName: expansions.name,
     })
     .from(transactions)
@@ -61,6 +138,16 @@ export default async function TransactionsPage() {
     .where(eq(transactions.storeId, ctx.storeId))
     .orderBy(desc(transactions.occurredAt))
     .limit(100);
+
+  // rows are already newest-first, so contiguous day runs form the groups
+  const now = new Date();
+  const groups: { label: string; rows: typeof rows }[] = [];
+  for (const t of rows) {
+    const label = dayLabel(t.occurredAt, now);
+    const last = groups[groups.length - 1];
+    if (last && last.label === label) last.rows.push(t);
+    else groups.push({ label, rows: [t] });
+  }
 
   return (
     <div className="space-y-6">
@@ -80,7 +167,12 @@ export default async function TransactionsPage() {
         />
       </div>
 
-      <RecordForm />
+      <RecordForm
+        initialPick={prefill.initialPick}
+        initialSide={prefill.side}
+        initialCondition={prefill.condition}
+        initialPrinting={prefill.printing}
+      />
 
       <Card>
         <CardHeader>
@@ -100,69 +192,92 @@ export default async function TransactionsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>When</TableHead>
-                  <TableHead></TableHead>
                   <TableHead>Product</TableHead>
-                  <TableHead>Condition</TableHead>
-                  <TableHead className="text-right">Qty</TableHead>
-                  <TableHead className="text-right">Each</TableHead>
+                  <TableHead className="hidden md:table-cell">Condition</TableHead>
+                  <TableHead className="hidden text-right sm:table-cell">Qty</TableHead>
+                  <TableHead className="hidden text-right sm:table-cell">Each</TableHead>
                   <TableHead className="text-right">Total</TableHead>
                   <TableHead></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((t) => (
-                  <TableRow key={t.id}>
-                    <TableCell className="whitespace-nowrap text-muted-foreground">
-                      {formatDateTime(t.occurredAt)}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={t.side === "sale" ? "success" : "secondary"}>
-                        {t.side === "sale" ? "sold" : "bought"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Link
-                        href={`/products/${t.productId}`}
-                        className="font-medium text-primary hover:underline"
+                {groups.map((g) => (
+                  <React.Fragment key={g.label}>
+                    <TableRow className="bg-muted/40 hover:bg-muted/40">
+                      <TableCell
+                        colSpan={7}
+                        className="py-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground"
                       >
-                        {t.productName}
-                      </Link>
-                      <span className="ml-1 text-xs text-muted-foreground">
-                        {t.expansionName}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {t.condition}
-                      {t.printing === "Foil" ? " · foil" : ""}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">{t.quantity}</TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatMoney(t.unitPrice)}
-                    </TableCell>
-                    <TableCell
-                      className={cn(
-                        "text-right font-medium tabular-nums",
-                        t.side === "sale" ? "text-success" : ""
-                      )}
-                    >
-                      {t.side === "sale" ? "+" : "−"}
-                      {formatMoney(Number(t.unitPrice) * t.quantity)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <form action={deleteTransactionAction}>
-                        <input type="hidden" name="transactionId" value={t.id} />
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-muted-foreground"
-                          type="submit"
-                          title="Delete entry (does not restore stock)"
+                        {g.label}
+                      </TableCell>
+                    </TableRow>
+                    {g.rows.map((t) => (
+                      <TableRow key={t.id}>
+                        <TableCell className="whitespace-nowrap text-muted-foreground">
+                          {formatTime(t.occurredAt)}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex min-w-0 items-center gap-3">
+                            <ProductImage
+                              productId={t.productId}
+                              imageUrl={t.productImageUrl}
+                              name={t.productName}
+                              className="h-14 w-10 shrink-0"
+                            />
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <Link
+                                  href={`/products/${t.productId}`}
+                                  className="truncate font-medium text-primary hover:underline"
+                                >
+                                  {t.productName}
+                                </Link>
+                                <Badge
+                                  variant={t.side === "sale" ? "success" : "secondary"}
+                                  className="hidden shrink-0 sm:inline-flex"
+                                >
+                                  {t.side === "sale" ? "sold" : "bought"}
+                                </Badge>
+                              </div>
+                              <p className="truncate text-xs text-muted-foreground">
+                                {t.expansionName}
+                                <span className="sm:hidden">
+                                  {" · "}
+                                  {t.quantity} × {formatMoney(t.unitPrice)} · {t.condition}
+                                  {t.printing === "Foil" ? " · foil" : ""}
+                                </span>
+                              </p>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="hidden text-muted-foreground md:table-cell">
+                          {t.condition}
+                          {t.printing === "Foil" ? " · foil" : ""}
+                        </TableCell>
+                        <TableCell className="hidden text-right tabular-nums sm:table-cell">
+                          {t.quantity}
+                        </TableCell>
+                        <TableCell className="hidden text-right tabular-nums sm:table-cell">
+                          {formatMoney(t.unitPrice)}
+                        </TableCell>
+                        <TableCell
+                          className={cn(
+                            "text-right font-medium tabular-nums",
+                            t.side === "sale" ? "text-success" : ""
+                          )}
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </form>
-                    </TableCell>
-                  </TableRow>
+                          {t.side === "sale" ? "+" : "−"}
+                          {formatMoney(Number(t.unitPrice) * t.quantity)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <DeleteTransactionButton
+                            id={t.id}
+                            label={`${t.quantity} × ${formatMoney(t.unitPrice)} ${t.productName}`}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </React.Fragment>
                 ))}
               </TableBody>
             </Table>

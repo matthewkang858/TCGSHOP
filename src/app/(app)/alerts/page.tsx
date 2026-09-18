@@ -1,6 +1,15 @@
 import Link from "next/link";
 import { desc, eq, isNull, and, count } from "drizzle-orm";
-import { Bell, CheckCheck } from "lucide-react";
+import {
+  ArrowLeftRight,
+  Bell,
+  CheckCheck,
+  DollarSign,
+  Flame,
+  PackagePlus,
+  TrendingUp,
+  type LucideIcon,
+} from "lucide-react";
 import { db } from "@/db";
 import { alertEvents, alerts, expansions, products } from "@/db/schema";
 import { requireStore } from "@/lib/tenancy";
@@ -19,6 +28,19 @@ const TYPE_LABEL: Record<string, string> = {
   buylist_arb: "Buylist arb",
   restock_velocity: "Restock",
 };
+
+const TYPE_ICON: Record<string, LucideIcon> = {
+  threshold_cross: DollarSign,
+  pct_change: TrendingUp,
+  velocity: Flame,
+  buylist_arb: ArrowLeftRight,
+  restock_velocity: PackagePlus,
+};
+
+function TypeIcon({ type, className }: { type: string; className?: string }) {
+  const Icon = TYPE_ICON[type] ?? Bell;
+  return <Icon className={className} aria-hidden />;
+}
 
 function configSummary(type: string, config: Record<string, unknown>): string {
   switch (type) {
@@ -107,18 +129,24 @@ export default async function AlertsPage() {
                 storeAlerts.map((a) => (
                   <div
                     key={a.id}
-                    className="flex items-center justify-between gap-3 rounded-md border px-3 py-2"
+                    className="flex items-center justify-between gap-3 rounded-md border px-3 py-1.5"
                   >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="truncate text-sm font-medium">{a.name}</span>
-                        <Badge variant="secondary">{TYPE_LABEL[a.type]}</Badge>
-                        {!a.active ? <Badge variant="outline">paused</Badge> : null}
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <TypeIcon
+                        type={a.type}
+                        className="h-4 w-4 shrink-0 text-muted-foreground"
+                      />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate text-sm font-medium">{a.name}</span>
+                          <Badge variant="secondary">{TYPE_LABEL[a.type]}</Badge>
+                          {!a.active ? <Badge variant="outline">paused</Badge> : null}
+                        </div>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {configSummary(a.type, a.config as Record<string, unknown>)} ·
+                          cooldown {a.cooldownHours}h
+                        </p>
                       </div>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {configSummary(a.type, a.config as Record<string, unknown>)} · cooldown{" "}
-                        {a.cooldownHours}h
-                      </p>
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
                       <form action={toggleAlertAction}>
@@ -166,14 +194,23 @@ export default async function AlertsPage() {
                     <div
                       key={e.id}
                       className={cn(
-                        "rounded-md border px-3 py-2",
-                        !e.readAt && "border-primary/40 bg-primary/5"
+                        "rounded-md border border-l-2 px-3 py-1.5",
+                        !e.readAt
+                          ? "border-primary/40 border-l-primary bg-primary/5"
+                          : "border-l-border"
                       )}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-medium">
-                          {e.alertName}
-                          <Badge variant="secondary" className="ml-2">
+                        <span className="flex min-w-0 items-center gap-1.5 text-sm font-medium">
+                          <TypeIcon
+                            type={e.alertType}
+                            className={cn(
+                              "h-3.5 w-3.5 shrink-0",
+                              !e.readAt ? "text-primary" : "text-muted-foreground"
+                            )}
+                          />
+                          <span className="truncate">{e.alertName}</span>
+                          <Badge variant="secondary" className="shrink-0">
                             {TYPE_LABEL[e.alertType]}
                           </Badge>
                         </span>
@@ -181,7 +218,7 @@ export default async function AlertsPage() {
                           {formatDateTime(e.firedAt)}
                         </span>
                       </div>
-                      <p className="mt-1 text-sm">
+                      <p className="mt-0.5 text-sm">
                         <Link
                           href={`/products/${e.productId}`}
                           className="font-medium text-primary hover:underline"

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { and, asc, count, desc, eq, ilike, sql, sum, type SQL } from "drizzle-orm";
-import { Boxes, Upload } from "lucide-react";
+import { Boxes, FileDown, ShoppingCart, Upload } from "lucide-react";
 import { z } from "zod";
 import { db } from "@/db";
 import { expansions, inventoryItems, products } from "@/db/schema";
@@ -123,12 +123,21 @@ export default async function InventoryPage({
           title="No inventory yet"
           description="Import your TCGplayer inventory export (or any CSV) to get started. Singles and sealed product both work."
           action={
-            <Button asChild>
-              <Link href="/inventory/import">
-                <Upload />
-                Import CSV
-              </Link>
-            </Button>
+            <div className="flex flex-col items-center gap-3">
+              <Button asChild>
+                <Link href="/inventory/import">
+                  <Upload />
+                  Import CSV
+                </Link>
+              </Button>
+              <a
+                href="/api/sample-inventory.csv"
+                className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+              >
+                <FileDown className="h-4 w-4" />
+                No export handy? Download a sample CSV
+              </a>
+            </div>
           }
         />
       ) : (
@@ -184,16 +193,17 @@ export default async function InventoryPage({
             </Button>
           </form>
 
-          <div className="rounded-lg border bg-card">
+          <div className="overflow-hidden rounded-lg border bg-card">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Product</TableHead>
+                  <TableHead className="min-w-52">Product</TableHead>
                   <TableHead>Set</TableHead>
                   <TableHead>Condition</TableHead>
                   <TableHead>Type</TableHead>
-                  <TableHead>Tags</TableHead>
+                  <TableHead className="hidden lg:table-cell">Tags</TableHead>
                   <TableHead className="text-right">Qty / Price / Cost</TableHead>
+                  <TableHead className="sr-only">Sell</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -227,7 +237,7 @@ export default async function InventoryPage({
                         {item.productType}
                       </Badge>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="hidden lg:table-cell">
                       <div className="flex max-w-36 flex-wrap gap-1">
                         {item.tags.map((t) => (
                           <Badge key={t} variant="outline">
@@ -247,11 +257,19 @@ export default async function InventoryPage({
                         }}
                       />
                     </TableCell>
+                    <TableCell className="pr-3">
+                      <Button asChild variant="outline" size="sm">
+                        <Link href={sellHref(item)} title="Record a sale of this item">
+                          <ShoppingCart />
+                          Sell
+                        </Link>
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))}
                 {rows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                    <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
                       No inventory matches these filters.
                     </TableCell>
                   </TableRow>
@@ -265,6 +283,17 @@ export default async function InventoryPage({
       )}
     </div>
   );
+}
+
+/** Quick-sell link per the transactions prefill contract (printing: Normal|Foil|''). */
+function sellHref(item: { productId: number; condition: string; printing: string | null }) {
+  const sp = new URLSearchParams({
+    productId: String(item.productId),
+    side: "sale",
+    condition: item.condition,
+    printing: item.printing === "Foil" || item.printing === "Normal" ? item.printing : "",
+  });
+  return `/transactions?${sp}`;
 }
 
 function Pagination({

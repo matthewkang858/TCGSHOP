@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { ProductPicker, type PickedProduct } from "@/components/product-picker";
-import { cn } from "@/lib/utils";
+import { cn, formatMoney } from "@/lib/utils";
 import {
   priceSuggestionAction,
   recordTransactionAction,
@@ -30,32 +30,77 @@ const CONDITIONS = [
  * stand-in for a scanner - the flow is already scanner-shaped: identify
  * product -> confirm price -> done.
  */
-export function RecordForm() {
+export function RecordForm({
+  initialPick,
+  initialSide,
+  initialCondition,
+  initialPrinting,
+}: {
+  initialPick?: PickedProduct | null;
+  initialSide?: "sale" | "purchase";
+  initialCondition?: string;
+  initialPrinting?: "" | "Normal" | "Foil";
+}) {
   const router = useRouter();
-  const [side, setSide] = React.useState<"sale" | "purchase">("sale");
+  const [side, setSide] = React.useState<"sale" | "purchase">(initialSide ?? "sale");
   const [product, setProduct] = React.useState<PickedProduct | null>(null);
-  const [condition, setCondition] = React.useState("Near Mint");
-  const [printing, setPrinting] = React.useState<"" | "Normal" | "Foil">("");
+  const [condition, setCondition] = React.useState(initialCondition ?? "Near Mint");
+  const [printing, setPrinting] = React.useState<"" | "Normal" | "Foil">(
+    initialPrinting ?? ""
+  );
   const [quantity, setQuantity] = React.useState("1");
   const [price, setPrice] = React.useState("");
   const [adjustInventory, setAdjustInventory] = React.useState(true);
   const [suggestion, setSuggestion] = React.useState<PriceSuggestion | null>(null);
+  const [suggesting, setSuggesting] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [flash, setFlash] = React.useState<string | null>(null);
 
-  async function onPick(p: PickedProduct | null) {
-    setProduct(p);
-    setSuggestion(null);
-    if (p) {
+  const priceRef = React.useRef<HTMLInputElement>(null);
+  // monotonic counter: a stale suggestion never fills the price field
+  const suggestRef = React.useRef(0);
+  const prefillConsumed = React.useRef(false);
+
+  const onPick = React.useCallback(
+    async (p: PickedProduct | null) => {
+      const requestId = ++suggestRef.current;
+      setProduct(p);
+      setSuggestion(null);
+      setSuggesting(false);
+      if (!p) return;
       if (p.productType === "sealed") setCondition("Unopened");
-      const s = await priceSuggestionAction({ productId: p.id });
-      setSuggestion(s);
-      // prefill with what's on the shelf: sticker beats system price beats market
-      const suggested = s.stickerPrice ?? s.currentPrice ?? s.marketPrice;
-      if (suggested != null) setPrice(String(suggested));
-    }
-  }
+      // counter speed: hands go straight to the price field
+      priceRef.current?.focus();
+      setSuggesting(true);
+      try {
+        const s = await priceSuggestionAction({ productId: p.id });
+        if (suggestRef.current !== requestId) return;
+        setSuggestion(s);
+        // prefill with what's on the shelf: sticker beats system price beats market -
+        // but never stomp a price the vendor already typed
+        const suggested = s.stickerPrice ?? s.currentPrice ?? s.marketPrice;
+        const el = priceRef.current;
+        if (suggested != null && el && el.value === "") {
+          setPrice(String(suggested));
+          setTimeout(() => el.select(), 0);
+        }
+      } catch {
+        // suggestion is a convenience; the form still works without it
+      } finally {
+        if (suggestRef.current === requestId) setSuggesting(false);
+      }
+    },
+    []
+  );
+
+  // Quick-sell URL prefill goes through the exact same path as a manual pick,
+  // so the suggestion fetch and sealed->Unopened rule fire identically.
+  React.useEffect(() => {
+    if (prefillConsumed.current) return;
+    prefillConsumed.current = true;
+    if (initialPick) void onPick(initialPick);
+  }, [initialPick, onPick]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -74,15 +119,24 @@ export function RecordForm() {
       });
       if (!res.ok) return setError(res.error);
       setFlash(
-        `${side === "sale" ? "Sale" : "Buy"} recorded: ${quantity} × $${Number(price).toFixed(2)}` +
+        `${side === "sale" ? "Sale" : "Buy"} recorded: ${quantity} × ${formatMoney(price)} ${product.label} = ${formatMoney(Number(price) * Number(quantity))}` +
           (res.inventoryAdjusted ? " · stock updated" : "")
       );
       setTimeout(() => setFlash(null), 4000);
+      suggestRef.current++;
       setProduct(null);
       setSuggestion(null);
+      setSuggesting(false);
       setQuantity("1");
       setPrice("");
+      // clearing `product` remounts the search input, whose autoFocus refocuses it
+      if (window.location.search) {
+        // strip quick-sell params so a refresh doesn't resurrect the prefill
+        router.replace("/transactions");
+      }
       router.refresh();
+    } catch {
+      setError("Could not record the transaction — check your connection and try again.");
     } finally {
       setBusy(false);
     }
@@ -171,6 +225,7 @@ export function RecordForm() {
             <div className="space-y-1">
               <Label>{side === "sale" ? "Sold at ($ each)" : "Paid ($ each)"}</Label>
               <Input
+                ref={priceRef}
                 type="number"
                 step="0.01"
                 min="0.01"
@@ -181,7 +236,12 @@ export function RecordForm() {
             </div>
           </div>
 
-          {suggestion ? (
+          {suggesting ? (
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              looking up your shelf price…
+            </p>
+          ) : suggestion ? (
             <p className="text-xs text-muted-foreground">
               {suggestion.stickerPrice != null
                 ? `Shelf sticker: $${suggestion.stickerPrice.toFixed(2)} · `
@@ -195,7 +255,7 @@ export function RecordForm() {
             </p>
           ) : null}
 
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"

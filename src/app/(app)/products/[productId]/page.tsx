@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { and, asc, desc, eq, gte, inArray } from "drizzle-orm";
-import { Eye, EyeOff } from "lucide-react";
+import { Banknote, Eye, EyeOff } from "lucide-react";
 import { z } from "zod";
 import { db } from "@/db";
 import {
@@ -30,7 +30,7 @@ import {
 import { PriceHistoryChart, type PricePoint } from "@/components/price-history-chart";
 import { ProductImage } from "@/components/product-image";
 import { realizedSaleStats } from "@/lib/transactions/service";
-import { formatDateTime, formatMoney } from "@/lib/utils";
+import { cn, formatDateTime, formatMoney, formatPct } from "@/lib/utils";
 import { setProductTypeOverrideAction, toggleWatchlistAction } from "./actions";
 
 export default async function ProductDetailPage({
@@ -131,24 +131,34 @@ export default async function ProductDetailPage({
   // the store's own realized street price - the data the platform builds on
   const realized = await realizedSaleStats(ctx.storeId, productId, 30);
 
+  // contract 1: transactions form prefills from these params
+  const recordSaleHref = `/transactions?productId=${product.productId}&side=sale&condition=${encodeURIComponent(
+    type === "sealed" ? "Unopened" : "Near Mint"
+  )}&printing=`;
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex items-start gap-4">
+        <div className="flex flex-wrap items-start gap-5">
           <ProductImage
             productId={product.productId}
             imageUrl={product.imageUrl}
             name={product.name}
-            className="h-44 w-32 shrink-0"
+            className="h-56 w-40 shrink-0 rounded-lg shadow-sm"
           />
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">{product.name}</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
+          <div className="min-w-0">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               {product.gameName} · {product.expansionName}
-              {product.number ? ` · #${product.number}` : ""}
-              {product.rarity ? ` · ${product.rarity}` : ""}
             </p>
-            <div className="mt-2 flex items-center gap-2">
+            <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">
+              {product.name}
+            </h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {[product.number ? `#${product.number}` : null, product.rarity]
+                .filter(Boolean)
+                .join(" · ") || " "}
+            </p>
+            <div className="mt-3 flex items-center gap-2">
               <Badge variant={type === "sealed" ? "warning" : "secondary"}>{type}</Badge>
               {product.productTypeOverride ? (
                 <Badge variant="outline">manual override</Badge>
@@ -156,14 +166,20 @@ export default async function ProductDetailPage({
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button asChild>
+            <Link href={recordSaleHref}>
+              <Banknote />
+              Record sale
+            </Link>
+          </Button>
           <form
             action={async () => {
               "use server";
               await toggleWatchlistAction({ productId });
             }}
           >
-            <Button type="submit" variant={watching ? "secondary" : "default"}>
+            <Button type="submit" variant={watching ? "secondary" : "outline"}>
               {watching ? <EyeOff /> : <Eye />}
               {watching ? "Unwatch" : "Add to watchlist"}
             </Button>
@@ -228,28 +244,37 @@ export default async function ProductDetailPage({
               {statByWindow.get("24h")?.trend ?? "—"}
             </p>
             {realized.count > 0 ? (
-              <p className="mt-2 border-t pt-2 text-xs">
-                <span className="font-medium">Your counter (30d):</span>{" "}
-                {realized.count} sold @ avg {formatMoney(realized.avgPrice)}
-                {realized.avgPrice != null && latestMarket ? (
-                  <span
-                    className={
-                      realized.avgPrice >= Number(latestMarket.price)
-                        ? "text-success"
-                        : "text-warning"
-                    }
-                  >
-                    {" "}
-                    ({realized.avgPrice >= Number(latestMarket.price) ? "+" : ""}
-                    {(
-                      ((realized.avgPrice - Number(latestMarket.price)) /
-                        Number(latestMarket.price)) *
-                      100
-                    ).toFixed(0)}
-                    % vs market)
+              <div className="mt-3 rounded-md border border-primary/30 bg-primary/5 px-3 py-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+                  Street price (your counter)
+                </p>
+                <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                  <span className="text-xl font-semibold tabular-nums">
+                    {formatMoney(realized.avgPrice)}
                   </span>
-                ) : null}
-              </p>
+                  {realized.avgPrice != null && latestMarket ? (
+                    <span
+                      className={cn(
+                        "rounded px-1.5 py-0.5 text-xs font-semibold tabular-nums",
+                        realized.avgPrice >= Number(latestMarket.price)
+                          ? "bg-success/10 text-success"
+                          : "bg-warning/10 text-warning"
+                      )}
+                    >
+                      {formatPct(
+                        ((realized.avgPrice - Number(latestMarket.price)) /
+                          Number(latestMarket.price)) *
+                          100
+                      )}{" "}
+                      vs market
+                    </span>
+                  ) : null}
+                </div>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {realized.count} sold in 30d
+                  {realized.lastAt ? ` · last ${formatDateTime(realized.lastAt)}` : ""}
+                </p>
+              </div>
             ) : null}
           </CardContent>
         </Card>

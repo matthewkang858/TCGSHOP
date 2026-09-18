@@ -24,6 +24,7 @@ import {
   deleteRuleAction,
   toggleRuleActiveAction,
 } from "./actions";
+import { ConfirmButton } from "./confirm-button";
 
 function scopeSummary(scope: RuleScope): string {
   const parts: string[] = [];
@@ -74,7 +75,7 @@ export default async function RepricingPage({
     <div className="space-y-6">
       <PageHeader
         title="Repricing"
-        description="Rules run in priority order — the first matching rule prices each item. Preview every run before applying."
+        description="First matching rule prices each card. Preview before anything changes."
       >
         <Button asChild variant="outline">
           <Link href="/repricing/rules/new">
@@ -112,7 +113,7 @@ export default async function RepricingPage({
           </CardHeader>
           <CardContent>
             <form action={createRunAction}>
-              <Table>
+              <Table className="min-w-[820px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-10">Run</TableHead>
@@ -122,7 +123,7 @@ export default async function RepricingPage({
                     <TableHead>Basis</TableHead>
                     <TableHead>Formula</TableHead>
                     <TableHead>Active</TableHead>
-                    <TableHead></TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -166,13 +167,33 @@ export default async function RepricingPage({
                           {r.active ? "active" : "off"}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right text-xs whitespace-nowrap">
-                        <Link
-                          href={`/repricing/rules/${r.id}`}
-                          className="text-primary hover:underline"
-                        >
-                          Edit
-                        </Link>
+                      <TableCell className="text-right whitespace-nowrap">
+                        {/* buttons target the per-rule forms rendered after the
+                            run form via form="<id>" — nesting forms is invalid HTML */}
+                        <div className="flex items-center justify-end gap-1">
+                          <Button asChild variant="ghost" size="sm" className="h-7 px-2 text-xs">
+                            <Link href={`/repricing/rules/${r.id}`}>Edit</Link>
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs"
+                            type="submit"
+                            form={`toggle-rule-${r.id}`}
+                          >
+                            {r.active ? "Disable" : "Enable"}
+                          </Button>
+                          <ConfirmButton
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+                            type="submit"
+                            form={`delete-rule-${r.id}`}
+                            message={`Delete rule "${r.name}"? This can't be undone.`}
+                          >
+                            Delete
+                          </ConfirmButton>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -185,37 +206,21 @@ export default async function RepricingPage({
                 </Button>
               </div>
             </form>
+            {/* action-column targets: rendered outside the run form so forms never nest */}
+            {rules.map((r) => (
+              <div key={r.id} className="hidden">
+                <form id={`toggle-rule-${r.id}`} action={toggleRuleActiveAction}>
+                  <input type="hidden" name="ruleId" value={r.id} />
+                  <input type="hidden" name="active" value={r.active ? "false" : "true"} />
+                </form>
+                <form id={`delete-rule-${r.id}`} action={deleteRuleAction}>
+                  <input type="hidden" name="ruleId" value={r.id} />
+                </form>
+              </div>
+            ))}
           </CardContent>
         </Card>
       )}
-
-      {rules.length > 0 ? (
-        <div className="flex flex-wrap gap-2">
-          {rules.map((r) => (
-            <div key={r.id} className="flex items-center gap-1 rounded-md border bg-card px-2 py-1 text-xs">
-              <span className="max-w-40 truncate font-medium">{r.name}</span>
-              <form action={toggleRuleActiveAction}>
-                <input type="hidden" name="ruleId" value={r.id} />
-                <input type="hidden" name="active" value={r.active ? "false" : "true"} />
-                <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" type="submit">
-                  {r.active ? "disable" : "enable"}
-                </Button>
-              </form>
-              <form action={deleteRuleAction}>
-                <input type="hidden" name="ruleId" value={r.id} />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 px-2 text-xs text-destructive"
-                  type="submit"
-                >
-                  delete
-                </Button>
-              </form>
-            </div>
-          ))}
-        </div>
-      ) : null}
 
       <Card>
         <CardHeader>

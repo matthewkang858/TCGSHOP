@@ -5,17 +5,18 @@ import { usePathname } from "next/navigation";
 import {
   Bell,
   Boxes,
+  HandCoins,
   LayoutDashboard,
   Library,
-  Receipt,
   Settings,
   Tags,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const links = [
+// Single source of truth for app navigation; the mobile tab bar reuses it.
+export const navLinks = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/transactions", label: "Transactions", icon: Receipt },
+  { href: "/transactions", label: "Sell / Buy", icon: HandCoins },
   { href: "/inventory", label: "Inventory", icon: Boxes },
   { href: "/products", label: "Catalog", icon: Library },
   { href: "/repricing", label: "Repricing", icon: Tags },
@@ -27,7 +28,7 @@ export function NavLinks() {
   const pathname = usePathname();
   return (
     <>
-      {links.map(({ href, label, icon: Icon }) => {
+      {navLinks.map(({ href, label, icon: Icon }) => {
         const active = pathname === href || pathname.startsWith(href + "/");
         return (
           <Link
@@ -36,8 +37,8 @@ export function NavLinks() {
             className={cn(
               "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
               active
-                ? "bg-primary/10 text-primary"
-                : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                ? "bg-primary text-primary-foreground shadow-card"
+                : "text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground"
             )}
           >
             <Icon className="h-4 w-4" />

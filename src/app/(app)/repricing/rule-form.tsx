@@ -74,9 +74,11 @@ export async function RuleForm({
               max={9999}
               defaultValue={rule?.priority ?? 100}
             />
-            <span className="text-xs text-muted-foreground">lower number wins overlaps</span>
+            <span className="text-xs text-muted-foreground">
+              lower numbers go first when rules overlap
+            </span>
           </label>
-          <label className="flex items-center gap-2 pt-6">
+          <label className="flex items-center gap-2 sm:pt-6">
             <input type="checkbox" name="active" defaultChecked={rule?.active ?? true} />
             <span className="text-sm font-medium">Active</span>
           </label>
@@ -85,10 +87,10 @@ export async function RuleForm({
 
       <Card>
         <CardHeader>
-          <CardTitle>Scope</CardTitle>
+          <CardTitle>What this rule covers</CardTitle>
           <p className="text-sm text-muted-foreground">
-            All filters AND together; leave everything empty to match the whole inventory.
-            Most stores run separate sealed and singles rules.
+            Every filter you set narrows the match — leave everything blank to cover your
+            whole inventory. Most stores run separate sealed and singles rules.
           </p>
         </CardHeader>
         <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -222,10 +224,11 @@ export async function RuleForm({
 
       <Card>
         <CardHeader>
-          <CardTitle>Pricing formula</CardTitle>
+          <CardTitle>How the price is set</CardTitle>
           <p className="text-sm text-muted-foreground">
-            new price = rounding(clamp(basis × multiplier + offset, floor, ceiling)) with
-            condition multipliers for non-NM singles, then min-price and margin guards.
+            New price = market basis × multiplier + offset, kept between floor and ceiling,
+            then rounded. Played singles get condition discounts; min-price and margin
+            guards apply last.
           </p>
         </CardHeader>
         <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -310,7 +313,7 @@ export async function RuleForm({
               defaultValue={rule?.maxChangePct != null ? Number(rule.maxChangePct) : ""}
             />
             <span className="text-xs text-muted-foreground">
-              flagged rows need manual approval
+              flagged rows wait for your OK before applying
             </span>
           </label>
           <label className="block space-y-1 sm:col-span-2">
@@ -326,7 +329,7 @@ export async function RuleForm({
           </label>
           <div className="space-y-1 sm:col-span-2">
             <span className="text-sm font-medium">Cost-basis guard (sealed insurance)</span>
-            <div className="flex items-center gap-4 pt-1">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-1">
               <label className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"

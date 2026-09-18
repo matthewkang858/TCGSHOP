@@ -5,9 +5,8 @@ import {
   ArrowUpRight,
   Bell,
   Boxes,
-  Check,
-  PackageX,
   Receipt,
+  ShoppingCart,
   Tags,
   TicketPercent,
   TrendingUp,
@@ -21,8 +20,26 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { InventoryValueChart, type ValuePoint } from "@/components/inventory-value-chart";
+import { ProductImage } from "@/components/product-image";
 import { cn, formatDateTime, formatMoney, formatPct } from "@/lib/utils";
-import { markNotCarriedAction, markStickerUpdatedAction } from "./actions";
+import { StickerRow } from "./sticker-row";
+
+// Headline stats read better without cents.
+function formatMoneyWhole(value: string | number | null | undefined): string {
+  const n = Number(value ?? NaN);
+  if (!Number.isFinite(n)) return "—";
+  return n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+}
+
+// Time-only for today's events; date + time otherwise.
+function formatWhen(d: Date | string): string {
+  const date = typeof d === "string" ? new Date(d) : d;
+  const now = new Date();
+  if (date.toDateString() === now.toDateString()) {
+    return date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  }
+  return formatDateTime(date);
+}
 
 export default async function DashboardPage() {
   const ctx = await requireStore();
@@ -95,6 +112,7 @@ export default async function DashboardPage() {
     ? await db.execute<{
         product_id: number;
         name: string;
+        image_url: string | null;
         set_name: string;
         ptype: string;
         now_price: string;
@@ -119,7 +137,7 @@ export default async function DashboardPage() {
             and product_id in (select product_id from stocked)
           order by product_id, captured_at desc
         )
-        select p.product_id, p.name, e.name set_name,
+        select p.product_id, p.name, p.image_url, e.name set_name,
                coalesce(p.product_type_override, p.product_type) ptype,
                l.price now_price, b.price then_price,
                round((l.price - b.price) / nullif(b.price,0) * 100, 1) pct
@@ -172,6 +190,13 @@ export default async function DashboardPage() {
     .orderBy(desc(transactions.occurredAt))
     .limit(5);
 
+  // today's counter totals (sales only)
+  const [today] = await db.execute<{ sales: number; revenue: string | null }>(sql`
+    select count(*)::int sales, sum(quantity * unit_price) revenue
+    from transactions
+    where store_id = ${storeId} and side = 'sale' and occurred_at >= current_date
+  `).then((r) => r.rows);
+
   // Sticker queue: lines whose shelf sticker no longer matches the system
   // price. `suggested` mirrors suggestedStickerPrice in src/lib/sticker.ts:
   // >=$20 nearest $5, $5-20 nearest $1, <$5 exact cents.
@@ -182,6 +207,7 @@ export default async function DashboardPage() {
         name: string;
         image_url: string | null;
         condition: string;
+        printing: string | null;
         quantity: number;
         current_price: string;
         sticker_price: string | null;
@@ -189,7 +215,7 @@ export default async function DashboardPage() {
         total: string;
       }>(sql`
         with candidates as (
-          select i.id, i.condition, i.quantity, i.current_price, i.sticker_price,
+          select i.id, i.condition, i.printing, i.quantity, i.current_price, i.sticker_price,
                  p.product_id, p.name, p.image_url,
                  case
                    when i.current_price >= 20 then round(i.current_price / 5) * 5
@@ -213,6 +239,14 @@ export default async function DashboardPage() {
     : [];
   const stickerTotal = stickerQueue.length > 0 ? Number(stickerQueue[0].total) : 0;
 
+  const repriceValue = !lastRun
+    ? "Not yet run"
+    : lastRun.status === "applied"
+      ? `${lastRun.appliedCount} updated`
+      : lastRun.status === "previewing"
+        ? "Preview ready"
+        : "Preview discarded";
+
   return (
     <div className="space-y-6">
       <PageHeader title="Dashboard" description={`${ctx.storeName} at a glance.`} />
@@ -221,18 +255,27 @@ export default async function DashboardPage() {
         <EmptyState
           icon={<Boxes className="h-8 w-8" />}
           title="Welcome to Countertop"
-          description="Import your inventory to start tracking value, repricing against live market data, and getting alerts when products move."
+          description="Import your inventory to see what it's worth, keep shelf prices current, and get a heads-up when prices move."
           action={
-            <div className="flex gap-2">
-              <Button asChild>
-                <Link href="/inventory/import">
-                  <Upload />
-                  Import inventory
-                </Link>
-              </Button>
-              <Button asChild variant="outline">
-                <Link href="/products">Browse catalog</Link>
-              </Button>
+            <div className="flex flex-col items-center gap-3">
+              <div className="flex flex-wrap justify-center gap-2">
+                <Button asChild>
+                  <Link href="/inventory/import">
+                    <Upload />
+                    Import inventory
+                  </Link>
+                </Button>
+                <Button asChild variant="outline">
+                  <Link href="/products">Browse catalog</Link>
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Just trying it out?{" "}
+                <a href="/api/sample-inventory.csv" className="text-primary hover:underline">
+                  Download a sample CSV
+                </a>{" "}
+                and import that first.
+              </p>
             </div>
           }
         />
@@ -241,29 +284,23 @@ export default async function DashboardPage() {
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             <StatCard
               label="Inventory value"
-              value={formatMoney(stats.total_value)}
+              value={formatMoneyWhole(stats.total_value)}
               sub={`${stats.lines.toLocaleString()} lines`}
             />
             <StatCard
               label="Singles"
-              value={formatMoney(stats.singles_value)}
+              value={formatMoneyWhole(stats.singles_value)}
               sub="at current prices"
             />
             <StatCard
               label="Sealed"
-              value={formatMoney(stats.sealed_value)}
+              value={formatMoneyWhole(stats.sealed_value)}
               sub="at current prices"
             />
             <StatCard
               label="Last reprice"
-              value={
-                lastRun
-                  ? lastRun.status === "applied"
-                    ? `${lastRun.appliedCount} applied`
-                    : lastRun.status
-                  : "never"
-              }
-              sub={lastRun ? formatDateTime(lastRun.createdAt) : "run one from Repricing"}
+              value={repriceValue}
+              sub={lastRun ? formatWhen(lastRun.createdAt) : "start one from Repricing"}
               href={lastRun ? `/repricing/runs/${lastRun.id}` : "/repricing"}
             />
           </div>
@@ -283,86 +320,27 @@ export default async function DashboardPage() {
             <CardContent>
               {stickerQueue.length === 0 ? (
                 <p className="py-2 text-sm text-muted-foreground">
-                  Every shelf sticker matches the current price. When a reprice run (or a
-                  price edit) moves an item past its sticker, it shows up here as a to-do.
+                  Every shelf sticker matches the current price. When a price change moves an
+                  item past its sticker, it shows up here as a to-do.
                 </p>
               ) : (
                 <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
-                  {stickerQueue.map((s) => {
-                    const suggested = Number(s.suggested);
-                    const old = s.sticker_price !== null ? Number(s.sticker_price) : null;
-                    const delta = old !== null ? suggested - old : null;
-                    return (
-                      <div
-                        key={s.id}
-                        className="flex items-center justify-between gap-3 rounded-md border px-3 py-2"
-                      >
-                        <div className="min-w-0">
-                          <Link
-                            href={`/products/${s.product_id}`}
-                            className="block truncate text-sm font-medium text-primary hover:underline"
-                          >
-                            {s.name}
-                          </Link>
-                          <span className="text-xs text-muted-foreground">
-                            {s.condition} · {s.quantity} in stock
-                          </span>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-3">
-                          <div className="text-right">
-                            <div className="text-sm font-semibold tabular-nums">
-                              {old !== null ? (
-                                <>
-                                  <span className="font-normal text-muted-foreground line-through">
-                                    {formatMoney(old)}
-                                  </span>{" "}
-                                  → {formatMoney(suggested)}
-                                </>
-                              ) : (
-                                <>{formatMoney(suggested)}</>
-                              )}
-                            </div>
-                            <div
-                              className={cn(
-                                "text-xs tabular-nums",
-                                delta === null
-                                  ? "text-muted-foreground"
-                                  : delta >= 0
-                                    ? "text-success"
-                                    : "text-destructive"
-                              )}
-                            >
-                              {delta === null
-                                ? "needs first sticker"
-                                : `${delta >= 0 ? "+" : "−"}${formatMoney(Math.abs(delta)).replace("$", "$")}`}
-                            </div>
-                          </div>
-                          <div className="flex flex-col gap-1">
-                            <form action={markStickerUpdatedAction}>
-                              <input type="hidden" name="itemId" value={s.id} />
-                              <Button type="submit" size="sm" variant="outline" className="w-full">
-                                <Check />
-                                Updated
-                              </Button>
-                            </form>
-                            <form action={markNotCarriedAction}>
-                              <input type="hidden" name="itemId" value={s.id} />
-                              <Button
-                                type="submit"
-                                size="sm"
-                                variant="ghost"
-                                className="w-full text-xs text-muted-foreground"
-                                title="Shelf spot is empty - remove from the working checklist (sets quantity to 0; restock brings it back)"
-                              >
-                                <PackageX />
-                                Don&apos;t carry
-                              </Button>
-                            </form>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
+                  {stickerQueue.map((s) => (
+                    <StickerRow
+                      key={s.id}
+                      item={{
+                        id: s.id,
+                        productId: s.product_id,
+                        name: s.name,
+                        imageUrl: s.image_url,
+                        condition: s.condition,
+                        printing: s.printing,
+                        quantity: s.quantity,
+                        suggested: Number(s.suggested),
+                        stickerPrice: s.sticker_price !== null ? Number(s.sticker_price) : null,
+                      }}
+                    />
+                  ))}
                 </div>
               )}
               {stickerTotal > stickerQueue.length ? (
@@ -371,15 +349,6 @@ export default async function DashboardPage() {
                   Mark these updated and the next batch appears.
                 </p>
               ) : null}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Inventory value · 30 days · singles vs sealed</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <InventoryValueChart data={valueSeries} />
             </CardContent>
           </Card>
 
@@ -395,13 +364,20 @@ export default async function DashboardPage() {
                 </Link>
               </CardHeader>
               <CardContent className="space-y-2">
+                <p className="rounded-md bg-muted/50 px-3 py-2 text-sm">
+                  <span className="text-muted-foreground">Today:</span>{" "}
+                  <span className="font-medium tabular-nums">
+                    {today?.sales ?? 0} {(today?.sales ?? 0) === 1 ? "sale" : "sales"} ·{" "}
+                    {formatMoney(today?.revenue ?? 0)}
+                  </span>
+                </p>
                 {recentTransactions.length === 0 ? (
                   <p className="py-4 text-center text-sm text-muted-foreground">
                     No sales or buys recorded yet.{" "}
                     <Link href="/transactions" className="text-primary hover:underline">
                       Record the first one
                     </Link>{" "}
-                    — every entry builds your store&apos;s realized-price history.
+                    — every entry builds your store&apos;s own price history.
                   </p>
                 ) : (
                   recentTransactions.map((t) => (
@@ -417,7 +393,7 @@ export default async function DashboardPage() {
                           {t.productName}
                         </Link>
                         <span className="text-xs text-muted-foreground">
-                          {formatDateTime(t.occurredAt)}
+                          {formatWhen(t.occurredAt)}
                         </span>
                       </div>
                       <div
@@ -434,6 +410,7 @@ export default async function DashboardPage() {
                 )}
               </CardContent>
             </Card>
+
             <Card>
               <CardHeader className="flex-row items-center justify-between space-y-0">
                 <CardTitle className="flex items-center gap-2">
@@ -444,7 +421,8 @@ export default async function DashboardPage() {
               <CardContent className="space-y-2">
                 {movers.length === 0 ? (
                   <p className="py-4 text-center text-sm text-muted-foreground">
-                    Movers appear once snapshots span a week. Keep the worker running.
+                    Price movers show up once your stock has a week of price history. Check back
+                    in a few days.
                   </p>
                 ) : (
                   movers.map((m) => {
@@ -452,24 +430,33 @@ export default async function DashboardPage() {
                     return (
                       <div
                         key={m.product_id}
-                        className="flex items-center justify-between gap-3 rounded-md border px-3 py-2"
+                        className="flex items-center gap-3 rounded-md border px-3 py-2"
                       >
-                        <div className="min-w-0">
+                        <ProductImage
+                          productId={m.product_id}
+                          imageUrl={m.image_url}
+                          name={m.name}
+                          className="h-12 w-9 shrink-0"
+                        />
+                        <div className="min-w-0 flex-1">
                           <Link
                             href={`/products/${m.product_id}`}
                             className="block truncate text-sm font-medium text-primary hover:underline"
                           >
                             {m.name}
                           </Link>
-                          <span className="text-xs text-muted-foreground">
+                          <span className="block truncate text-xs text-muted-foreground">
                             {m.set_name}
                             {m.ptype === "sealed" ? " · sealed" : ""}
                           </span>
+                          <span className="text-xs text-muted-foreground tabular-nums">
+                            {formatMoney(m.then_price)} → {formatMoney(m.now_price)}
+                          </span>
                         </div>
-                        <div className="shrink-0 text-right">
+                        <div className="flex shrink-0 flex-col items-end gap-1">
                           <div
                             className={cn(
-                              "flex items-center justify-end gap-1 text-sm font-semibold tabular-nums",
+                              "flex items-center gap-1 text-sm font-semibold tabular-nums",
                               pct >= 0 ? "text-success" : "text-destructive"
                             )}
                           >
@@ -480,9 +467,12 @@ export default async function DashboardPage() {
                             )}
                             {formatPct(pct)}
                           </div>
-                          <div className="text-xs text-muted-foreground tabular-nums">
-                            {formatMoney(m.then_price)} → {formatMoney(m.now_price)}
-                          </div>
+                          <Button asChild size="sm" variant="outline" className="h-11 md:h-8">
+                            <Link href={`/transactions?productId=${m.product_id}&side=sale`}>
+                              <ShoppingCart />
+                              Sell
+                            </Link>
+                          </Button>
                         </div>
                       </div>
                     );
@@ -513,12 +503,15 @@ export default async function DashboardPage() {
                 ) : (
                   recentEvents.map((e) => {
                     const p = e.payload as Record<string, unknown>;
+                    const pctChange =
+                      "pct_change" in p && p.pct_change != null ? Number(p.pct_change) : null;
+                    const market = "market" in p && p.market != null ? Number(p.market) : null;
                     return (
                       <div key={e.id} className="rounded-md border px-3 py-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm font-medium">{e.alertName}</span>
-                          <span className="text-xs text-muted-foreground">
-                            {formatDateTime(e.firedAt)}
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="truncate text-sm font-medium">{e.alertName}</span>
+                          <span className="shrink-0 text-xs text-muted-foreground">
+                            {formatWhen(e.firedAt)}
                           </span>
                         </div>
                         <p className="text-xs text-muted-foreground">
@@ -528,8 +521,8 @@ export default async function DashboardPage() {
                           >
                             {e.productName}
                           </Link>
-                          {"pct_change" in p ? ` · Δ ${p.pct_change}%` : ""}
-                          {"market" in p && p.market != null ? ` · $${p.market}` : ""}
+                          {pctChange !== null ? ` · ${formatPct(pctChange)}` : ""}
+                          {market !== null ? ` · now ${formatMoney(market)}` : ""}
                         </p>
                       </div>
                     );
@@ -539,7 +532,22 @@ export default async function DashboardPage() {
             </Card>
           </div>
 
-          <div className="flex gap-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>Inventory value · last 30 days</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <InventoryValueChart data={valueSeries} />
+            </CardContent>
+          </Card>
+
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant="outline">
+              <Link href="/transactions">
+                <Receipt />
+                Record a sale
+              </Link>
+            </Button>
             <Button asChild variant="outline">
               <Link href="/repricing">
                 <Tags />
