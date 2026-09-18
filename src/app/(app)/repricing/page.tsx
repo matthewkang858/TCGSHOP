@@ -38,6 +38,7 @@ const BASIS_LABEL: Record<string, string> = {
   sales_median_7d: "7d sales median",
   ck_buylist: "CK Buylist",
   cardmarket_trend: "CM Trend",
+  street_blended: "Street blended",
 };
 
 const ROUNDING_LABEL: Record<string, string> = {

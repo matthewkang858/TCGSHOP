@@ -25,7 +25,11 @@ const BASIS_OPTIONS: { value: Rule["basis"]; label: string; hint?: string }[] = 
   { value: "tcg_low", label: "TCG Low", hint: "lowest current listing" },
   { value: "sales_median_7d", label: "7-day sales median" },
   { value: "cardmarket_trend", label: "Cardmarket trend (P1 - EU)", hint: "stub" },
+  { value: "street_blended", label: "Street blended (Countertop)" },
 ];
+
+const STREET_BLENDED_HELP =
+  "Street blended: what cards are actually selling for in person across contributing stores, blended toward TCGplayer market when the in-person data is thin.";
 
 const labelClass = "text-sm font-medium text-foreground";
 const helpClass = "text-xs text-muted-foreground";
@@ -259,6 +263,7 @@ export async function RuleForm({
                   </option>
                 ))}
               </Select>
+              <span className={helpClass}>{STREET_BLENDED_HELP}</span>
             </label>
             <label className="block space-y-1">
               <span className={labelClass}>Multiplier</span>

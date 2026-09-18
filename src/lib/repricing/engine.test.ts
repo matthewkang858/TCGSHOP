@@ -3,8 +3,10 @@ import {
   applyRounding,
   computePrice,
   conditionMultiplier,
+  isSkuLevelBasis,
   ruleMatchesItem,
   selectRule,
+  streetBasisValue,
   type EngineItem,
   type EngineRule,
 } from "./engine";
@@ -243,6 +245,90 @@ describe("computePrice - max_change_pct flagging", () => {
     const r = computePrice(rule(), item({ basisValue: 100, currentPrice: 1 }));
     expect(r.flagged).toBe(false);
     expect(r.pctChange).toBe(9900);
+  });
+});
+
+describe("street_blended basis", () => {
+  it("resolves the blended price, reading pg numerics as strings", () => {
+    expect(streetBasisValue({ blendedPrice: "12.40", confidence: "0.6200" })).toBe(12.4);
+    expect(streetBasisValue({ blendedPrice: 12.4, confidence: 0.62 })).toBe(12.4);
+  });
+
+  it("prices off the blended value like any other basis", () => {
+    const basisValue = streetBasisValue({ blendedPrice: "12.40", confidence: "0.6200" });
+    expect(basisValue).not.toBeNull();
+    const r = computePrice(
+      rule({ multiplier: 0.95, rounding: "psychological" }),
+      item({ basisValue: basisValue!, basisIsSkuLevel: true })
+    );
+    // 12.40 * 0.95 = 11.78 -> next .99 ending
+    expect(r.newPrice).toBe(11.99);
+    expect(r.flagged).toBe(false);
+  });
+
+  it("is SKU-level, so it skips the condition multiplier", () => {
+    expect(isSkuLevelBasis("street_blended")).toBe(true);
+    expect(isSkuLevelBasis("tcg_market")).toBe(false);
+    expect(isSkuLevelBasis("sales_median_7d")).toBe(false);
+
+    // street_prices rows are keyed by condition, so the HP row IS the HP price
+    const street = computePrice(
+      rule(),
+      item({
+        condition: "Heavily Played",
+        basisValue: 4.2,
+        basisIsSkuLevel: isSkuLevelBasis("street_blended"),
+      })
+    );
+    expect(street.newPrice).toBe(4.2);
+    expect(street.guards.join()).not.toMatch(/condition/);
+
+    // the same number off a product-level basis still gets discounted
+    const market = computePrice(
+      rule(),
+      item({
+        condition: "Heavily Played",
+        basisValue: 4.2,
+        basisIsSkuLevel: isSkuLevelBasis("tcg_market"),
+      })
+    );
+    expect(market.newPrice).toBe(2.31); // 4.20 * 0.55
+  });
+
+  it("falls back to no-data when there is no usable street price", () => {
+    expect(streetBasisValue(undefined)).toBeNull(); // no row for this sku
+    expect(streetBasisValue(null)).toBeNull();
+    expect(streetBasisValue({ blendedPrice: null, confidence: "0.6200" })).toBeNull();
+    expect(streetBasisValue({ blendedPrice: "0", confidence: "0.62" })).toBeNull();
+  });
+
+  it("still prices off a zero-confidence blend, because that IS the market price", () => {
+    // Below the k-anonymity gate the tape publishes no street price and the
+    // blend collapses to the marketplace reference. Refusing it would skip
+    // most of a store's inventory to avoid using a number we would have
+    // resolved to anyway under a different basis name.
+    expect(streetBasisValue({ blendedPrice: "12.40", confidence: "0" })).toBe(12.4);
+  });
+
+  it("a missing street price skips the item exactly like any other missing basis", () => {
+    const streetRule = { id: "street", basis: "street_blended", scope: {} };
+    const single = {
+      productType: "single" as const,
+      categoryId: 3,
+      groupId: 604,
+      rarity: null,
+      condition: "Near Mint",
+      printing: null,
+      tags: [],
+    };
+    // the service resolves null -> basisValue null -> row written as no-data/excluded
+    const picked = selectRule([streetRule], single, () => streetBasisValue(undefined));
+    expect(picked?.rule.id).toBe("street");
+    expect(picked?.basisValue).toBeNull();
+
+    // identical shape to a missing snapshot on a product-level basis
+    const marketRule = { id: "market", basis: "tcg_market", scope: {} };
+    expect(selectRule([marketRule], single, () => null)?.basisValue).toBeNull();
   });
 });
 

@@ -14,9 +14,22 @@ import {
 import { ensureFreshSnapshots } from "@/jobs/price-sweep";
 import { withJobRun } from "@/jobs/job-run";
 import { getTcgApisClient } from "@/lib/tcgapis/client";
-import { computePrice, selectRule, type EngineRule, type ScopeInput } from "./engine";
+import {
+  computePrice,
+  conditionMultiplier,
+  isSkuLevelBasis,
+  selectRule,
+  streetBasisValue,
+  type EngineRule,
+  type ScopeInput,
+  type StreetPriceRow,
+} from "./engine";
 
-/** basis -> (provider, listing) in price_snapshots; sales_median_7d reads sales_stats */
+/**
+ * basis -> (provider, listing) in price_snapshots. Bases that read their own
+ * table map to null: sales_median_7d reads sales_stats, street_blended reads
+ * street_prices.
+ */
 export const BASIS_SNAPSHOT_SOURCE: Record<
   string,
   { provider: string; listing: "retail" | "buylist" } | null
@@ -26,6 +39,9 @@ export const BASIS_SNAPSHOT_SOURCE: Record<
   ck_buylist: { provider: "cardkingdom", listing: "buylist" },
   cardmarket_trend: { provider: "cardmarket", listing: "retail" },
   sales_median_7d: null,
+  // street_blended reads street_prices, but it also needs the marketplace
+  // snapshot as its fallback for cards the tape has never seen.
+  street_blended: { provider: "tcgplayer", listing: "retail" },
 };
 
 const DEFAULT_STALENESS_HOURS = 24;
@@ -50,6 +66,66 @@ async function latestSnapshotPrices(
     for (const row of res.rows) {
       map.set(`${row.product_id}|${source.provider}|${source.listing}`, Number(row.price));
     }
+  }
+  return map;
+}
+
+/** The four columns street_prices is keyed by - NULL printing is a real key. */
+export type SkuIdentity = {
+  productId: number;
+  condition: string;
+  printing: string | null;
+  language: string;
+};
+
+/**
+ * Map key over the full street_prices identity. JSON keeps a NULL printing
+ * distinct from the string "null" and from an empty printing, which is what
+ * the table's own `nullsNotDistinct` unique index means: a NULL printing
+ * matches a NULL printing and nothing else.
+ */
+export function streetIdentityKey(i: SkuIdentity): string {
+  return JSON.stringify([i.productId, i.condition, i.printing, i.language]);
+}
+
+/**
+ * Latest street_prices row per (product, condition, printing, language).
+ *
+ * `distinct on` carries the same nulls-not-distinct semantics as the table's
+ * unique index - DISTINCT groups NULL with NULL - so a sealed row (printing
+ * NULL) collapses to one latest row rather than one per as_of. Latest is max
+ * as_of; the row is then handed to `streetBasisValue`, which decides whether
+ * it is usable at all (confidence > 0, blended price present).
+ */
+export async function latestStreetPrices(
+  productIds: number[]
+): Promise<Map<string, StreetPriceRow>> {
+  const map = new Map<string, StreetPriceRow>();
+  if (productIds.length === 0) return map;
+  const res = await db.execute<{
+    product_id: number;
+    condition: string;
+    printing: string | null;
+    language: string;
+    blended_price: string | null;
+    confidence: string | null;
+  }>(sql`
+    select distinct on (product_id, condition, printing, language)
+      product_id, condition, printing, language, blended_price, confidence
+    from street_prices
+    where product_id = any(${sql.param(productIds)}::int[])
+    order by product_id, condition, printing, language, as_of desc
+  `);
+  for (const row of res.rows) {
+    map.set(
+      streetIdentityKey({
+        productId: Number(row.product_id),
+        condition: row.condition,
+        printing: row.printing,
+        language: row.language,
+      }),
+      { blendedPrice: row.blended_price, confidence: row.confidence }
+    );
   }
   return map;
 }
@@ -119,6 +195,7 @@ export async function createRepriceRun(
       productId: inventoryItems.productId,
       condition: inventoryItems.condition,
       printing: inventoryItems.printing,
+      language: inventoryItems.language,
       quantity: inventoryItems.quantity,
       currentPrice: inventoryItems.currentPrice,
       costBasis: inventoryItems.costBasis,
@@ -153,6 +230,12 @@ export async function createRepriceRun(
     .filter((s): s is { provider: string; listing: "retail" | "buylist" } => s !== null);
   const prices = await latestSnapshotPrices(productIds, sources);
 
+  // street_blended basis - our own published price, keyed by the full sku identity
+  let streetRows = new Map<string, StreetPriceRow>();
+  if (usedBases.includes("street_blended")) {
+    streetRows = await latestStreetPrices(productIds);
+  }
+
   // sales_median_7d basis
   const medians = new Map<number, number>();
   if (usedBases.includes("sales_median_7d")) {
@@ -183,11 +266,28 @@ export async function createRepriceRun(
     } satisfies EngineRule,
   }));
 
-  const resolveBasisFor = (productId: number) => (rule: (typeof engineRules)[number]) => {
-    if (rule.basis === "sales_median_7d") return medians.get(productId) ?? null;
+  const resolveBasisFor = (item: SkuIdentity) => (rule: (typeof engineRules)[number]) => {
+    if (rule.basis === "street_blended") {
+      const street = streetBasisValue(streetRows.get(streetIdentityKey(item)));
+      if (street !== null) return street;
+      // No published row for this sku identity at all. The blend for a card
+      // nobody has sold in person IS the marketplace price, so fall back to it
+      // rather than skipping the item - otherwise a card traded once prices
+      // fine while a card traded never gets skipped, which is incoherent.
+      //
+      // The snapshot is quoted Near Mint and this basis is SKU-level, so the
+      // condition step has to be applied here. It uses the platform ladder,
+      // not the rule's overrides, so that a card with street data and a card
+      // without are stepped down by the same amount.
+      const source = BASIS_SNAPSHOT_SOURCE.street_blended!;
+      const reference =
+        prices.get(`${item.productId}|${source.provider}|${source.listing}`) ?? null;
+      return reference === null ? null : reference * conditionMultiplier(item.condition);
+    }
+    if (rule.basis === "sales_median_7d") return medians.get(item.productId) ?? null;
     const source = BASIS_SNAPSHOT_SOURCE[rule.basis];
     if (!source) return null;
-    return prices.get(`${productId}|${source.provider}|${source.listing}`) ?? null;
+    return prices.get(`${item.productId}|${source.provider}|${source.listing}`) ?? null;
   };
 
   let flaggedCount = 0;
@@ -206,7 +306,7 @@ export async function createRepriceRun(
         printing: item.printing,
         tags: item.tags,
       },
-      resolveBasisFor(item.productId)
+      resolveBasisFor(item)
     );
     if (!picked) continue; // out of scope for every selected rule
 
@@ -222,7 +322,10 @@ export async function createRepriceRun(
         newPrice: null,
         pctChange: null,
         flagged: true,
-        flagReason: "No price data for this basis - run a sweep or pick another basis",
+        flagReason:
+          rule.basis === "street_blended"
+            ? "No street price and no market price for this card - run a sweep or pick another basis"
+            : "No price data for this basis - run a sweep or pick another basis",
         excluded: true,
       });
       continue;
@@ -234,6 +337,8 @@ export async function createRepriceRun(
       currentPrice: item.currentPrice != null ? Number(item.currentPrice) : null,
       costBasis: item.costBasis != null ? Number(item.costBasis) : null,
       basisValue,
+      // street_blended rows are already condition-exact; don't discount twice
+      basisIsSkuLevel: isSkuLevelBasis(rule.basis),
     });
     if (result.flagged) flaggedCount++;
 

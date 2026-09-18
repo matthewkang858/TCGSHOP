@@ -5,7 +5,8 @@
  *   1. raw   = basis * multiplier + offset
  *   2. clamp to [floor, ceiling]
  *   3. condition multiplier (product-level basis, non-NM singles only;
- *      sealed items and SKU-level bases skip this entirely)
+ *      sealed items and SKU-level bases skip this entirely - see
+ *      SKU_LEVEL_BASES)
  *   4. rounding mode
  *   5. guards: min_price, then cost-basis margin floor. Guards run AFTER
  *      rounding so no rounding mode can ever defeat them.
@@ -228,4 +229,53 @@ export function selectRule<R extends { scope: ScopeInput }>(
     }
   }
   return null;
+}
+
+// --- basis resolution ----------------------------------------------------------
+
+/**
+ * Bases whose stored price is already exact for the item's condition and
+ * printing, so step 3 must NOT discount it again.
+ *
+ * `street_blended` IS SKU-level: `street_prices` rows are keyed by
+ * (product, condition, printing, language), so the row for a Heavily Played
+ * foil already *is* the Heavily Played foil price - it was computed from
+ * trades in that exact condition. Running the condition multiplier over it
+ * would discount a played card twice (0.55 of a price that is already 0.55 of
+ * NM). Product-level bases like tcg_market quote NM only, which is why they
+ * still need the multiplier.
+ */
+export const SKU_LEVEL_BASES: readonly string[] = ["street_blended"];
+
+export function isSkuLevelBasis(basis: string): boolean {
+  return SKU_LEVEL_BASES.includes(basis);
+}
+
+/**
+ * One `street_prices` row as it comes back from the driver. pg `numeric`
+ * arrives as a string, so both fields are widened and converted here.
+ */
+export type StreetPriceRow = {
+  blendedPrice: string | number | null;
+  confidence: string | number | null;
+};
+
+/**
+ * The `street_blended` basis value for one item: the blended price off its
+ * latest street_prices row, or null when there is no usable row.
+ *
+ * Confidence deliberately does NOT gate this. A zero-confidence blend is not a
+ * number we made up - it is the marketplace reference, because that is what
+ * the blend collapses to when there is no credible in-person data. Rejecting
+ * it would mean a store that selected this basis gets most of its inventory
+ * skipped, which is both useless and a worse answer than the market price the
+ * blend already fell back to. The preview shows the confidence next to the
+ * price, so nothing is hidden.
+ */
+export function streetBasisValue(row: StreetPriceRow | null | undefined): number | null {
+  if (!row) return null;
+  if (row.blendedPrice == null) return null;
+  const blended = Number(row.blendedPrice);
+  if (!Number.isFinite(blended) || blended <= 0) return null;
+  return blended;
 }

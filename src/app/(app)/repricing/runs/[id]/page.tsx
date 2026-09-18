@@ -27,6 +27,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { latestStreetPrices, streetIdentityKey } from "@/lib/repricing/service";
 import { cn, formatDateTime, formatMoney, formatPct } from "@/lib/utils";
 import { applyRunAction, approveAllFlaggedAction, discardRunAction } from "../../actions";
 import { ConfirmButton } from "../../confirm-button";
@@ -82,11 +83,13 @@ export default async function RunDetailPage({
       excluded: repriceRunItems.excluded,
       approved: repriceRunItems.approved,
       ruleName: repriceRules.name,
+      ruleBasis: repriceRules.basis,
       productId: products.productId,
       productName: products.name,
       expansionName: expansions.name,
       condition: inventoryItems.condition,
       printing: inventoryItems.printing,
+      language: inventoryItems.language,
       quantity: inventoryItems.quantity,
       productType: sql<string>`coalesce(${products.productTypeOverride}, ${products.productType})`,
     })
@@ -97,6 +100,32 @@ export default async function RunDetailPage({
     .leftJoin(repriceRules, eq(repriceRules.id, repriceRunItems.ruleId))
     .where(eq(repriceRunItems.runId, id))
     .orderBy(orderBy);
+
+  // A street-blended price is part ours, part marketplace. Show how much of it
+  // is ours so nobody reads a thin number as a market fact.
+  const streetConfidence = new Map<string, number>();
+  const streetProductIds = [
+    ...new Set(items.filter((i) => i.ruleBasis === "street_blended").map((i) => i.productId)),
+  ];
+  if (streetProductIds.length > 0) {
+    for (const [key, row] of await latestStreetPrices(streetProductIds)) {
+      const confidence = Number(row.confidence);
+      if (Number.isFinite(confidence) && confidence > 0) streetConfidence.set(key, confidence);
+    }
+  }
+  const confidenceFor = (item: (typeof items)[number]) => {
+    if (item.ruleBasis !== "street_blended" || item.basisValue === null) return null;
+    return (
+      streetConfidence.get(
+        streetIdentityKey({
+          productId: item.productId,
+          condition: item.condition,
+          printing: item.printing,
+          language: item.language,
+        })
+      ) ?? null
+    );
+  };
 
   const previewing = run.status === "previewing";
   const eligible = items.filter(
@@ -287,6 +316,7 @@ export default async function RunDetailPage({
                       const pct = item.pctChange !== null ? Number(item.pctChange) : null;
                       const isFlagged = item.flagged && item.newPrice !== null;
                       const needsOk = isFlagged && !item.approved && !item.excluded;
+                      const confidence = confidenceFor(item);
                       return (
                         <TableRow
                           key={item.id}
@@ -354,6 +384,14 @@ export default async function RunDetailPage({
                           </TableCell>
                           <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
                             {formatMoney(item.basisValue)}
+                            {confidence !== null ? (
+                              <span
+                                className="block text-[11px] leading-tight text-muted-foreground/70"
+                                title="Confidence in the blended street price — the rest of it is TCGplayer market"
+                              >
+                                {Math.round(confidence * 100)}% confidence
+                              </span>
+                            ) : null}
                           </TableCell>
                           <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
                             {formatMoney(item.oldPrice)}
