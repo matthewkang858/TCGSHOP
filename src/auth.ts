@@ -39,12 +39,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       maxAge: 24 * 60 * 60,
       options: {},
       async sendVerificationRequest({ identifier, url }) {
-        await sendEmail({
+        const result = await sendEmail({
           to: identifier,
           subject: "Sign in to Countertop",
           html: `<p>Click the link below to sign in to Countertop:</p><p><a href="${url}">Sign in</a></p><p>If you didn't request this, ignore this email.</p>`,
           consoleFallback: `\n🔑 Magic sign-in link for ${identifier}:\n${url}\n`,
         });
+        if (!result.ok) {
+          // surface delivery failures in server logs (Resend free tier only
+          // delivers to the Resend account owner's address, etc.)
+          console.error(`[auth] magic-link email to ${identifier} failed: ${result.error}`);
+        }
       },
     },
   ],

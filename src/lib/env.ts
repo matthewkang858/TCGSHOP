@@ -20,6 +20,14 @@ const envSchema = z.object({
   RESEND_API_KEY: z.string().optional(),
   EMAIL_FROM: z.string().default("Countertop <notifications@localhost>"),
 
+  // Demo deployments: renders a one-click "View the demo store" button on the
+  // login page that signs in as the seeded demo user. Never enable in real
+  // production - anyone with the URL gets into the demo store.
+  DEMO_LOGIN: z
+    .string()
+    .default("false")
+    .transform((v) => v === "true"),
+
   // Billing stub (P1)
   BILLING_ENABLED: z
     .string()
