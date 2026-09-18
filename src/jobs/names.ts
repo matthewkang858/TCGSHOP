@@ -3,6 +3,7 @@ export const JOB = {
   PRICE_SWEEP_WATCHLIST: "price-sweep-watchlist",
   PRICE_SWEEP_INVENTORY: "price-sweep-inventory",
   ALERT_EVAL: "alert-eval",
+  TAPE_AGGREGATE: "tape-aggregate",
 } as const;
 
 export type JobName = (typeof JOB)[keyof typeof JOB];

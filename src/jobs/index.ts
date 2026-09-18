@@ -3,6 +3,7 @@ import { JOB } from "./names";
 import { runCatalogSync } from "./catalog-sync";
 import { registerSweepJobs } from "./price-sweep";
 import { registerAlertJobs } from "./alert-eval";
+import { registerTapeJobs } from "./tape-aggregate";
 
 /**
  * Register all job handlers + cron schedules on the worker process.
@@ -11,6 +12,8 @@ import { registerAlertJobs } from "./alert-eval";
  *  - price-sweep-watchlist: hourly
  *  - price-sweep-inventory: nightly (02:00)
  *  - alert-eval:            enqueued by sweeps after each run
+ *  - tape-aggregate:        nightly (03:30), after the sweep refreshes the
+ *                           references the tape measures itself against
  */
 export async function registerJobs() {
   const boss = await getBoss();
@@ -24,6 +27,7 @@ export async function registerJobs() {
 
   await registerSweepJobs(boss);
   await registerAlertJobs(boss);
+  await registerTapeJobs(boss);
 
   console.log("[worker] job handlers registered");
 }
