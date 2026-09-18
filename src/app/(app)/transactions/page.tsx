@@ -1,7 +1,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { desc, eq, sql } from "drizzle-orm";
-import { Receipt } from "lucide-react";
+import { ArrowLeftRight, Banknote, Coins, CreditCard, Receipt, Wallet } from "lucide-react";
 import { z } from "zod";
 import { db } from "@/db";
 import { expansions, products, transactions } from "@/db/schema";
@@ -102,6 +102,39 @@ function lineDetail(t: {
   return t.printing === "Foil" ? `${detail} · Foil` : detail;
 }
 
+type PaymentMethod = (typeof transactions.paymentMethod.enumValues)[number];
+
+const PAYMENT_DISPLAY: Record<
+  Exclude<PaymentMethod, "unknown">,
+  { label: string; icon: typeof CreditCard }
+> = {
+  card: { label: "Card", icon: CreditCard },
+  cash: { label: "Cash", icon: Banknote },
+  store_credit: { label: "Credit", icon: Wallet },
+  trade: { label: "Trade", icon: ArrowLeftRight },
+  other: { label: "Other", icon: Coins },
+};
+
+/**
+ * How the row was paid, kept deliberately quiet — the ledger still answers
+ * "what sold for how much" first. It reports what the clerk entered and claims
+ * nothing more: a hand-picked "Card" is the store's word, not a verified
+ * charge. Rows with no method recorded show nothing at all.
+ */
+function PaymentIndicator({ method }: { method: PaymentMethod }) {
+  if (method === "unknown") return null;
+  const { label, icon: Icon } = PAYMENT_DISPLAY[method];
+  return (
+    <span
+      className="inline-flex shrink-0 items-center gap-1 text-xs font-normal text-muted-foreground"
+      title={`Paid with ${label.toLowerCase()} — as entered at the counter`}
+    >
+      <Icon className="size-3.5 shrink-0" aria-hidden="true" />
+      {label}
+    </span>
+  );
+}
+
 export default async function TransactionsPage({
   searchParams,
 }: {
@@ -138,6 +171,7 @@ export default async function TransactionsPage({
       unitPrice: transactions.unitPrice,
       occurredAt: transactions.occurredAt,
       source: transactions.source,
+      paymentMethod: transactions.paymentMethod,
       productId: products.productId,
       productName: products.name,
       productImageUrl: products.imageUrl,
@@ -271,7 +305,10 @@ export default async function TransactionsPage({
                             </div>
                           </TableCell>
                           <TableCell className="text-xs text-muted-foreground">
-                            <span className="block truncate">{lineDetail(t)}</span>
+                            <span className="flex min-w-0 items-center gap-2">
+                              <span className="truncate">{lineDetail(t)}</span>
+                              <PaymentIndicator method={t.paymentMethod} />
+                            </span>
                           </TableCell>
                           <TableCell
                             className={cn(
@@ -306,6 +343,8 @@ export default async function TransactionsPage({
                     {g.label}
                   </div>
                   {g.rows.map((t) => (
+                    // the tender rides under the amount, not in the meta line,
+                    // where a long product name would truncate it away
                     <DataRow
                       key={t.id}
                       href={`/products/${t.productId}`}
@@ -328,6 +367,11 @@ export default async function TransactionsPage({
                           {t.side === "sale" ? "+" : "−"}
                           {formatMoney(Number(t.unitPrice) * t.quantity)}
                         </span>
+                      }
+                      valueMeta={
+                        t.paymentMethod === "unknown" ? undefined : (
+                          <PaymentIndicator method={t.paymentMethod} />
+                        )
                       }
                       actions={
                         <DeleteTransactionButton

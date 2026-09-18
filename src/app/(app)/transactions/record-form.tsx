@@ -2,7 +2,15 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, CircleAlert, Loader2 } from "lucide-react";
+import {
+  ArrowLeftRight,
+  Banknote,
+  CheckCircle2,
+  CircleAlert,
+  CreditCard,
+  Loader2,
+  Wallet,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -24,6 +32,19 @@ const CONDITIONS = [
   "Damaged",
   "Unopened",
 ];
+
+/**
+ * The four tenders a counter actually sees. `other`/`unknown` exist in the
+ * schema for imports and older rows - a clerk never has to pick them.
+ */
+const PAYMENT_OPTIONS = [
+  { key: "card", label: "Card", icon: CreditCard },
+  { key: "cash", label: "Cash", icon: Banknote },
+  { key: "store_credit", label: "Credit", icon: Wallet },
+  { key: "trade", label: "Trade", icon: ArrowLeftRight },
+] as const;
+
+type CounterPaymentMethod = (typeof PAYMENT_OPTIONS)[number]["key"];
 
 /**
  * Counter-speed transaction entry. The product search box is the manual
@@ -50,6 +71,10 @@ export function RecordForm({
   );
   const [quantity, setQuantity] = React.useState("1");
   const [price, setPrice] = React.useState("");
+  // Card is the common counter tender, so it is the default - but it is still
+  // only what the clerk says, never proof of anything.
+  const [paymentMethod, setPaymentMethod] =
+    React.useState<CounterPaymentMethod>("card");
   const [adjustInventory, setAdjustInventory] = React.useState(true);
   const [suggestion, setSuggestion] = React.useState<PriceSuggestion | null>(null);
   const [suggesting, setSuggesting] = React.useState(false);
@@ -116,10 +141,14 @@ export function RecordForm({
         quantity,
         unitPrice: price,
         adjustInventory,
+        paymentMethod,
       });
       if (!res.ok) return setError(res.error);
+      const paymentLabel =
+        PAYMENT_OPTIONS.find((o) => o.key === paymentMethod)?.label ?? "";
       setFlash(
         `${side === "sale" ? "Sale" : "Buy"} recorded: ${quantity} × ${formatMoney(price)} ${product.label} = ${formatMoney(Number(price) * Number(quantity))}` +
+          (paymentLabel ? ` · ${paymentLabel.toLowerCase()}` : "") +
           (res.inventoryAdjusted ? " · stock updated" : "")
       );
       setTimeout(() => setFlash(null), 4000);
@@ -129,6 +158,9 @@ export function RecordForm({
       setSuggesting(false);
       setQuantity("1");
       setPrice("");
+      // back to the default: a tender carried over from the last customer
+      // would quietly mislabel this one
+      setPaymentMethod("card");
       // clearing `product` remounts the search input, whose autoFocus refocuses it
       if (window.location.search) {
         // strip quick-sell params so a refresh doesn't resurrect the prefill
@@ -215,7 +247,18 @@ export function RecordForm({
             </div>
           </div>
 
-          {/* 3 — the money, and the one action that closes the sale */}
+          {/* 3 — how the customer paid: one tap, pre-answered as Card */}
+          <div className="space-y-1.5">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+              <Label id="record-payment-label">Paid with</Label>
+              <span className="hidden text-xs text-muted-foreground sm:block">
+                card sales become verifiable once you connect a POS
+              </span>
+            </div>
+            <PaymentToggle value={paymentMethod} onChange={setPaymentMethod} />
+          </div>
+
+          {/* 4 — the money, and the one action that closes the sale */}
           <div className="rounded-md border border-border/60 bg-surface-subtle p-3">
             <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
               <Label htmlFor="record-price">{priceLabel}</Label>
@@ -284,6 +327,53 @@ export function RecordForm({
         </form>
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Tender is one tap, never a dropdown: the clerk is mid-sale, one-handed, on a
+ * phone. Four 44px targets in a row, Card already chosen, so the fast path is
+ * still "price → Record" with nothing extra to answer.
+ *
+ * What it records is a claim by the store, not a verified fact — so nothing
+ * here says "verified". Card entries only become verifiable once a POS is
+ * connected and the processor's charge id lands on the row.
+ */
+function PaymentToggle({
+  value,
+  onChange,
+}: {
+  value: CounterPaymentMethod;
+  onChange: (m: CounterPaymentMethod) => void;
+}) {
+  return (
+    <div
+      role="group"
+      aria-labelledby="record-payment-label"
+      className="grid grid-cols-4 gap-1 rounded-md border border-input bg-muted/60 p-1"
+    >
+      {PAYMENT_OPTIONS.map((opt) => {
+        const Icon = opt.icon;
+        const active = value === opt.key;
+        return (
+          <button
+            key={opt.key}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onChange(opt.key)}
+            className={cn(
+              "flex h-11 min-w-11 items-center justify-center gap-1.5 rounded-[5px] px-1 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
+              active
+                ? "border border-border bg-card text-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <Icon className="size-4 shrink-0" aria-hidden="true" />
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

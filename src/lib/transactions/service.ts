@@ -13,6 +13,15 @@ import { inventoryItems, transactions } from "@/db/schema";
  * truth for the price tape; inventory sync is a best-effort convenience.
  */
 
+/** What the store says they were paid in. A label, not proof — see the insert below. */
+export type PaymentMethod =
+  | "card"
+  | "cash"
+  | "store_credit"
+  | "trade"
+  | "other"
+  | "unknown";
+
 export type RecordTransactionInput = {
   productId: number;
   side: "sale" | "purchase";
@@ -25,6 +34,8 @@ export type RecordTransactionInput = {
   notes?: string | null;
   adjustInventory: boolean;
   source?: string;
+  /** defaults to "unknown" so older callers keep recording unchanged */
+  paymentMethod?: PaymentMethod;
 };
 
 export async function recordTransaction(
@@ -46,6 +57,12 @@ export async function recordTransaction(
         unitPrice: input.unitPrice.toFixed(2),
         occurredAt: input.occurredAt ?? new Date(),
         source: input.source ?? "manual",
+        // A hand-entered method is the store's own claim about the tender.
+        // `paymentRef`/`paymentProcessor` stay unset here on purpose: only a
+        // POS/Stripe integration may write them, because a processor charge id
+        // is what the tape treats as attestation, and nothing typed at the
+        // counter can earn it.
+        paymentMethod: input.paymentMethod ?? "unknown",
         notes: input.notes ?? null,
         recordedBy: userId,
       })

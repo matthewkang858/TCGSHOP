@@ -18,6 +18,11 @@ const recordSchema = z.object({
   unitPrice: z.coerce.number().positive().max(1_000_000),
   notes: z.string().trim().max(500).optional(),
   adjustInventory: z.boolean().default(true),
+  // What the clerk says the counter was paid in. Defaults to "unknown" so any
+  // caller predating the payment row keeps working untouched.
+  paymentMethod: z
+    .enum(["card", "cash", "store_credit", "trade", "other", "unknown"])
+    .default("unknown"),
 });
 
 export type RecordResult =
@@ -42,6 +47,7 @@ export async function recordTransactionAction(input: unknown): Promise<RecordRes
     unitPrice: v.unitPrice,
     notes: v.notes,
     adjustInventory: v.adjustInventory,
+    paymentMethod: v.paymentMethod,
   });
   revalidatePath("/transactions");
   revalidatePath("/inventory");
