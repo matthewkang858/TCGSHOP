@@ -341,7 +341,7 @@ export function InventoryRow({ item, sellHref }: { item: InventoryRowItem; sellH
           </TableCell>
           <TableCell className="pl-0">
             {/* Slot width is reserved in both states so rows never reflow on hover. */}
-            <div className="flex items-center justify-end gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 md:has-[[data-state=open]]:opacity-100">
+            <div className="flex items-center justify-end gap-1 opacity-100 md:has-[[data-state=open]]:opacity-100">
               <Button variant="outline" size="sm" onClick={() => e.setEditing(true)}>
                 Edit
               </Button>

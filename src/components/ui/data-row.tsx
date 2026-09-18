@@ -91,7 +91,11 @@ export function DataRow({
       ) : null}
 
       {actions ? (
-        <div className="relative z-10 flex w-[84px] shrink-0 items-center justify-end gap-1 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
+        // Always visible: hover-reveal hides the row's whole purpose (the
+        // sticker queue's "mark updated" is the feature), and there is no
+        // hover on the phones clerks actually use. One quiet button is not
+        // the noise problem - twelve stacked full-width ones were.
+        <div className="relative z-10 flex w-[84px] shrink-0 items-center justify-end gap-1">
           {actions}
         </div>
       ) : null}

@@ -253,7 +253,7 @@ export default async function RepricingPage({
                     />
                   </div>
 
-                  <div className="flex w-[88px] shrink-0 items-center justify-end gap-1 transition-opacity md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100">
+                  <div className="flex w-[88px] shrink-0 items-center justify-end gap-1">
                     <Button asChild size="sm" variant="outline">
                       <Link href={`/repricing/rules/${rule.id}`}>Edit</Link>
                     </Button>
@@ -360,7 +360,7 @@ export default async function RepricingPage({
                           {run.status === "applied" ? run.appliedCount : "—"}
                         </TableCell>
                         <TableCell className="text-right">
-                          <div className="flex justify-end transition-opacity md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100">
+                          <div className="flex justify-end">
                             <Button asChild size="sm" variant="outline">
                               <Link href={`/repricing/runs/${run.id}`}>
                                 {run.status === "previewing" ? "Review" : "View"}

@@ -379,7 +379,7 @@ export default async function RunDetailPage({
                                   // A flagged row keeps its control at rest — it is
                                   // the one thing the clerk has to decide.
                                   !needsOk &&
-                                    "md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100"
+                                    ""
                                 )}
                               >
                                 <ApproveButton

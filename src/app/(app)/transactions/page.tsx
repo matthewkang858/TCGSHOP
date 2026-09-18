@@ -283,7 +283,7 @@ export default async function TransactionsPage({
                             {formatMoney(Number(t.unitPrice) * t.quantity)}
                           </TableCell>
                           <TableCell className="text-right">
-                            <div className="flex justify-end transition-opacity md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
+                            <div className="flex justify-end">
                               <DeleteTransactionButton
                                 id={t.id}
                                 label={`${t.quantity} × ${formatMoney(t.unitPrice)} ${t.productName}`}

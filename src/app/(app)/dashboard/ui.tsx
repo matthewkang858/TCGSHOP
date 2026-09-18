@@ -223,7 +223,7 @@ export function RowActions({
         // Touch always shows the action; desktop reveals it on hover/focus, and
         // keeps it up while an overflow menu spawned from it is open.
         "relative z-10 flex shrink-0 items-center justify-end gap-1 transition-opacity",
-        "md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100",
+        "",
         "md:has-[[data-state=open]]:opacity-100",
         className
       )}

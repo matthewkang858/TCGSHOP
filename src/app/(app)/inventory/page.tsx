@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { and, asc, count, desc, eq, ilike, sql, sum, type SQL } from "drizzle-orm";
-import { Boxes, FileDown, Search, SlidersHorizontal, Upload } from "lucide-react";
+import { Boxes, FileDown, Search, Upload } from "lucide-react";
 import { z } from "zod";
 import { db } from "@/db";
 import { expansions, inventoryItems, products } from "@/db/schema";
@@ -217,8 +217,10 @@ export default async function InventoryPage({
 }
 
 /**
- * One quiet toolbar: search is always visible, the selects collapse behind a
- * "Filters" disclosure below md (`md:contents` folds them back into one row).
+ * One quiet toolbar. The selects are always rendered: a closed <details>
+ * hides its children even under `display: contents`, which silently made the
+ * filters unreachable on desktop. They simply wrap onto a second line on
+ * phones instead.
  */
 function FilterBar({
   params,
@@ -243,13 +245,8 @@ function FilterBar({
           <Search />
         </Button>
       </div>
-      <details className="group w-full md:contents">
-        <summary className="inline-flex h-9 cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-muted-foreground md:hidden">
-          <SlidersHorizontal className="size-4" />
-          Filters
-        </summary>
-        <div className="mt-2 hidden w-full flex-wrap items-center gap-2 group-open:flex md:mt-0 md:flex md:w-auto">
-          <Select
+      <div className="flex w-full flex-wrap items-center gap-2 md:w-auto">
+        <Select
             name="type"
             aria-label="Product type"
             defaultValue={params.type ?? ""}
@@ -297,8 +294,7 @@ function FilterBar({
           <Button type="submit" variant="outline" className="w-full md:w-auto">
             Apply
           </Button>
-        </div>
-      </details>
+      </div>
     </form>
   );
 }
