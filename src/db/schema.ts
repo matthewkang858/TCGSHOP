@@ -28,6 +28,7 @@ export const repriceBasisEnum = pgEnum("reprice_basis", [
   "sales_median_7d",
   "cardmarket_trend",
   "ck_buylist",
+  "street_blended",
 ]);
 export const roundingEnum = pgEnum("rounding_mode", [
   "psychological",
@@ -50,6 +51,18 @@ export const alertTypeEnum = pgEnum("alert_type", [
 export const membershipRoleEnum = pgEnum("membership_role", ["owner", "member"]);
 export const jobStatusEnum = pgEnum("job_status", ["running", "succeeded", "failed"]);
 export const transactionSideEnum = pgEnum("transaction_side", ["sale", "purchase"]);
+/**
+ * How the counter was paid. This is a label the store reports — it is the
+ * presence of `paymentRef`, not this field, that makes a trade attested.
+ */
+export const paymentMethodEnum = pgEnum("payment_method", [
+  "card",
+  "cash",
+  "store_credit",
+  "trade",
+  "other",
+  "unknown",
+]);
 
 // ---------------------------------------------------------------------------
 // Auth.js tables (users/accounts/sessions/verification tokens)
@@ -61,6 +74,8 @@ export const users = pgTable("users", {
   email: text("email").notNull().unique(),
   emailVerified: timestamp("email_verified", { mode: "date" }),
   image: text("image"),
+  /** platform operator (sees the cross-store tape, never exposed to stores) */
+  platformAdmin: boolean("platform_admin").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -485,6 +500,19 @@ export const transactions = pgTable(
     occurredAt: timestamp("occurred_at").notNull().defaultNow(),
     /** manual (counter entry) | seed; future: scan, nightly_close, pos_sync */
     source: text("source").notNull().default("manual"),
+
+    /** what the store says they were paid in */
+    paymentMethod: paymentMethodEnum("payment_method").notNull().default("unknown"),
+    /**
+     * The processor's identifier for the charge (Stripe payment intent, Square
+     * payment id). Its presence is what the tape treats as attestation: anyone
+     * can type a price into a form, but a charge id means a card was really
+     * run for that amount, with fees and a chargeback trail behind it. A trade
+     * labelled "card" with no ref is still just a claim.
+     */
+    paymentRef: text("payment_ref"),
+    /** which processor issued `paymentRef` (stripe | square | ...) */
+    paymentProcessor: text("payment_processor"),
     notes: text("notes"),
     recordedBy: uuid("recorded_by").references(() => users.id),
     createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -492,6 +520,156 @@ export const transactions = pgTable(
   (t) => [
     index("transactions_store_occurred_idx").on(t.storeId, t.occurredAt),
     index("transactions_product_occurred_idx").on(t.productId, t.occurredAt),
+    /** the tape sweeps by day across all stores, so lead with occurredAt */
+    index("transactions_occurred_product_idx").on(t.occurredAt, t.productId),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// The tape: cross-store aggregation of in-person transactions.
+//
+// This is the platform-level dataset, NOT store-facing. Stores contribute
+// rows to `transactions`; these tables are the anonymized, quality-controlled
+// aggregate built from every store at once. Nothing here may ever be joined
+// back to a single store in a store-facing query.
+// ---------------------------------------------------------------------------
+
+/** why a trade was left out of an observation - audit trail for the tape */
+export const exclusionReasonEnum = pgEnum("exclusion_reason", [
+  "price_outlier",
+  "store_outlier",
+  "implausible_vs_reference",
+  "non_positive_price",
+]);
+
+/**
+ * One row per (sku identity, day): the trimmed, quality-controlled summary of
+ * what actually changed hands across all contributing stores that day.
+ */
+export const marketObservations = pgTable(
+  "market_observations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: integer("product_id")
+      .notNull()
+      .references(() => products.productId),
+    condition: text("condition").notNull(),
+    printing: text("printing"),
+    language: text("language").notNull().default("English"),
+    /** UTC day this bucket covers */
+    bucketDate: timestamp("bucket_date", { mode: "date" }).notNull(),
+
+    /** trades and units that survived the quality filters */
+    tradeCount: integer("trade_count").notNull().default(0),
+    unitCount: integer("unit_count").notNull().default(0),
+    /** distinct contributing stores - the k-anonymity gate */
+    storeCount: integer("store_count").notNull().default(0),
+
+    /** volume-weighted average price of surviving trades */
+    vwap: numeric("vwap", { precision: 12, scale: 2 }),
+    medianPrice: numeric("median_price", { precision: 12, scale: 2 }),
+    p25: numeric("p25", { precision: 12, scale: 2 }),
+    p75: numeric("p75", { precision: 12, scale: 2 }),
+    lowPrice: numeric("low_price", { precision: 12, scale: 2 }),
+    highPrice: numeric("high_price", { precision: 12, scale: 2 }),
+
+    /** observed before filtering, so coverage and rejection rates are auditable */
+    rawTradeCount: integer("raw_trade_count").notNull().default(0),
+    excludedCount: integer("excluded_count").notNull().default(0),
+
+    /** surviving trades a payment processor attested */
+    verifiedTradeCount: integer("verified_trade_count").notNull().default(0),
+    /** share of surviving units backed by a processor charge, 0..1 */
+    verifiedShare: numeric("verified_share", { precision: 5, scale: 4 }).notNull().default("0"),
+    /** true when attested trades defined this bucket's outlier fences */
+    fencedOnVerified: boolean("fenced_on_verified").notNull().default(false),
+
+    computedAt: timestamp("computed_at").notNull().defaultNow(),
+  },
+  (t) => [
+    unique("market_obs_identity_uq")
+      .on(t.productId, t.condition, t.printing, t.language, t.bucketDate)
+      .nullsNotDistinct(),
+    index("market_obs_product_date_idx").on(t.productId, t.bucketDate),
+    index("market_obs_date_idx").on(t.bucketDate),
+  ]
+);
+
+/**
+ * The published price for a sku identity: the street price from our own tape,
+ * the marketplace reference, and the confidence-weighted blend of the two.
+ * This is the product other platforms would license.
+ */
+export const streetPrices = pgTable(
+  "street_prices",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: integer("product_id")
+      .notNull()
+      .references(() => products.productId),
+    condition: text("condition").notNull(),
+    printing: text("printing"),
+    language: text("language").notNull().default("English"),
+    asOf: timestamp("as_of", { mode: "date" }).notNull(),
+
+    /** trailing-window street price from in-person trades (null until credible) */
+    streetPrice: numeric("street_price", { precision: 12, scale: 2 }),
+    sampleTrades: integer("sample_trades").notNull().default(0),
+    sampleStores: integer("sample_stores").notNull().default(0),
+    /** share of the window's units backed by a processor charge, 0..1 */
+    verifiedShare: numeric("verified_share", { precision: 5, scale: 4 }).notNull().default("0"),
+    /** 0..1 - drives how far the blend moves off the marketplace reference */
+    confidence: numeric("confidence", { precision: 5, scale: 4 }).notNull().default("0"),
+    /** the per-axis breakdown behind `confidence`, for the ops drill-down */
+    confidenceBreakdown: jsonb("confidence_breakdown").$type<{
+      sample: number;
+      breadth: number;
+      agreement: number;
+      recency: number;
+      attestation: number;
+    }>(),
+
+    /** marketplace reference at computation time (tcgplayer retail) */
+    referencePrice: numeric("reference_price", { precision: 12, scale: 2 }),
+    /** confidence-weighted blend of street and reference - the headline number */
+    blendedPrice: numeric("blended_price", { precision: 12, scale: 2 }),
+    /** (street - reference) / reference, in percent; the "what they can't see" signal */
+    divergencePct: numeric("divergence_pct", { precision: 10, scale: 2 }),
+
+    computedAt: timestamp("computed_at").notNull().defaultNow(),
+  },
+  (t) => [
+    unique("street_price_identity_uq")
+      .on(t.productId, t.condition, t.printing, t.language, t.asOf)
+      .nullsNotDistinct(),
+    index("street_price_product_idx").on(t.productId, t.asOf),
+    index("street_price_divergence_idx").on(t.asOf, t.divergencePct),
+  ]
+);
+
+/** Audit of trades the tape rejected, so quality control is inspectable. */
+export const tapeExclusions = pgTable(
+  "tape_exclusions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    transactionId: uuid("transaction_id")
+      .notNull()
+      .references(() => transactions.id, { onDelete: "cascade" }),
+    productId: integer("product_id")
+      .notNull()
+      .references(() => products.productId),
+    bucketDate: timestamp("bucket_date", { mode: "date" }).notNull(),
+    reason: exclusionReasonEnum("reason").notNull(),
+    /** the price that was rejected, kept for the quality report */
+    unitPrice: numeric("unit_price", { precision: 12, scale: 2 }).notNull(),
+    /** was the rejected trade processor-attested? cash rejections cluster */
+    wasVerified: boolean("was_verified").notNull().default(false),
+    detail: text("detail"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("tape_exclusions_date_idx").on(t.bucketDate),
+    index("tape_exclusions_reason_idx").on(t.reason),
   ]
 );
 

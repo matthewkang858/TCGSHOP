@@ -22,6 +22,13 @@
       "when": 1789534156154,
       "tag": "0002_sparkling_red_shift",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1789748054026,
+      "tag": "0003_tape_and_payment_attestation",
+      "breakpoints": true
     }
   ]
 }
