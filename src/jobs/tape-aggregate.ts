@@ -40,11 +40,17 @@ import { JOB } from "./names";
  * without any of the bookkeeping that incremental aggregation would need.
  */
 
-/** days of daily buckets recomputed each run - covers late ledger entries */
-const RECOMPUTE_DAYS = 10;
-
 /** trailing days of buckets that feed one street price */
 const WINDOW_DAYS = 30;
+
+/**
+ * Daily buckets recomputed each run. This covers the whole street-price
+ * window on purpose: the k-anonymity count below needs a complete exclusion
+ * record for every day it looks at, and recomputing a shorter window would
+ * leave the older days' exclusions to rot. At real scale this becomes the
+ * thing to make incremental - but not before it has to be.
+ */
+const RECOMPUTE_DAYS = WINDOW_DAYS;
 
 /** identities need this many distinct stores across the window to publish */
 const MIN_WINDOW_STORES = DEFAULT_CONFIG.minStores;
@@ -95,11 +101,12 @@ type TradeRow = {
 };
 
 export async function runTapeAggregate(
-  opts: { asOf?: Date } = {},
+  opts: { asOf?: Date; days?: number } = {},
   stats: Record<string, unknown> = {}
 ) {
   const asOf = utcDay(opts.asOf ?? new Date());
-  const bucketStart = addDays(asOf, -(RECOMPUTE_DAYS - 1));
+  const recomputeDays = Math.max(WINDOW_DAYS, opts.days ?? RECOMPUTE_DAYS);
+  const bucketStart = addDays(asOf, -(recomputeDays - 1));
   const windowStart = addDays(asOf, -(WINDOW_DAYS - 1));
   const end = addDays(asOf, 1);
 
@@ -272,6 +279,11 @@ async function computeStreetPrices(
   // Distinct stores across the whole window. This cannot be recovered from the
   // per-day counts, because the same store trades on many days - and it is the
   // number the k-anonymity gate turns on, so it has to be exact.
+  //
+  // Excluded trades must not count. Otherwise one honest store plus one store
+  // whose every trade was rejected would read as two contributors and publish
+  // a price that only one business actually stands behind - which is the exact
+  // situation the gate exists to prevent.
   const storeRows = await db.execute<{
     product_id: number;
     condition: string;
@@ -279,10 +291,13 @@ async function computeStreetPrices(
     language: string;
     stores: number;
   }>(sql`
-    select product_id, condition, printing, language,
-           count(distinct store_id)::int as stores
-    from transactions
-    where side = 'sale' and occurred_at >= ${windowStart} and occurred_at < ${end}
+    select t.product_id, t.condition, t.printing, t.language,
+           count(distinct t.store_id)::int as stores
+    from transactions t
+    left join tape_exclusions x on x.transaction_id = t.id
+    where t.side = 'sale'
+      and t.occurred_at >= ${windowStart} and t.occurred_at < ${end}
+      and x.id is null
     group by 1, 2, 3, 4
   `);
   const storesByIdentity = new Map<string, number>();

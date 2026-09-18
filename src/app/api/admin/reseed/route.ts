@@ -43,7 +43,7 @@ async function reseed(request: Request) {
     // the store-facing demo is still correct without it.
     let tape: Record<string, unknown> | { error: string };
     try {
-      tape = await runTapeAggregate();
+      tape = await runTapeAggregate({ days: 60 });
     } catch (e) {
       console.error("[reseed] tape aggregation failed:", e);
       tape = { error: e instanceof Error ? e.message : String(e) };
