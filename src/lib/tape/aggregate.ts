@@ -13,7 +13,9 @@
  *   2. IQR outlier fences — trims the tails without assuming a distribution.
  *      Run twice: once over raw trades (catches typos) and once over
  *      per-store medians, one vote per store (catches a store whose whole
- *      price level is out of line with the market)
+ *      price level is out of line with the market). Never narrower than a
+ *      floor either side of the median, so a shop that is honestly cheaper
+ *      is treated as a competitor rather than an error
  *   3. payment attestation — a trade backed by a processor charge id counts
  *      in full; a self-reported one counts at a discount, and defines nothing
  *   4. store-concentration capping — one store cannot dominate a bucket's
@@ -77,6 +79,16 @@ export type AggregationConfig = {
   minStores: number;
   /** weight multiplier for a self-reported (unattested) trade */
   unverifiedWeight: number;
+  /**
+   * Fences never close tighter than this fraction either side of the median.
+   *
+   * Without a floor, tight agreement produces razor-thin fences: when honest
+   * stores cluster within a few percent, the interquartile range is a few
+   * percent, and a shop that is legitimately 15% cheaper lands outside. That
+   * shop is not an outlier, it is a competitor - and excluding it would make
+   * the tape describe the consensus rather than the market.
+   */
+  minFenceHalfWidth: number;
 };
 
 export const DEFAULT_CONFIG: AggregationConfig = {
@@ -86,6 +98,7 @@ export const DEFAULT_CONFIG: AggregationConfig = {
   maxStoreWeightShare: 0.5,
   minStores: 2,
   unverifiedWeight: 0.35,
+  minFenceHalfWidth: 0.25,
 };
 
 export type Observation = {
@@ -135,13 +148,19 @@ export function median(values: number[]): number | null {
 }
 
 /**
- * Tukey fences over a set of values. Returns null when there are too few
- * points, or when the interquartile range is zero — a zero IQR would collapse
- * the fences onto the median and reject everything that is not exactly it.
+ * Tukey fences over a set of values, never narrower than `minHalfWidth` either
+ * side of the median. Returns null when there are too few points, or when the
+ * interquartile range is zero — a zero IQR would collapse the fences onto the
+ * median and reject everything that is not exactly it.
+ *
+ * The floor is what keeps a tight-agreeing bucket from turning every honest
+ * price difference into an outlier. It widens the fence, so it can only ever
+ * let a trade through, never reject one.
  */
 export function tukeyFence(
   values: number[],
-  iqrMultiple: number
+  iqrMultiple: number,
+  minHalfWidth = 0
 ): { low: number; high: number } | null {
   if (values.length < MIN_POINTS_FOR_FENCES) return null;
   const sorted = [...values].sort((a, b) => a - b);
@@ -149,7 +168,13 @@ export function tukeyFence(
   const q3 = quantile(sorted, 0.75)!;
   const iqr = q3 - q1;
   if (iqr <= 0) return null;
-  return { low: q1 - iqrMultiple * iqr, high: q3 + iqrMultiple * iqr };
+
+  const med = quantile(sorted, 0.5)!;
+  const floor = Math.abs(med) * minHalfWidth;
+  return {
+    low: Math.min(q1 - iqrMultiple * iqr, med - floor),
+    high: Math.max(q3 + iqrMultiple * iqr, med + floor),
+  };
 }
 
 /**
@@ -207,7 +232,7 @@ export function aggregateTrades(
   const fenceSample = (fencedOnVerified ? verifiedTrades : surviving).map((t) => t.unitPrice);
 
   {
-    const fence = tukeyFence(fenceSample, config.iqrMultiple);
+    const fence = tukeyFence(fenceSample, config.iqrMultiple, config.minFenceHalfWidth);
     if (fence) {
       const kept: Trade[] = [];
       for (const t of surviving) {
@@ -233,7 +258,11 @@ export function aggregateTrades(
   // store's whole price level sits outside, all of its trades go.
   const medianByStore = storeMedians(surviving);
   if (medianByStore.size >= MIN_POINTS_FOR_FENCES) {
-    const fence = tukeyFence([...medianByStore.values()], config.iqrMultiple);
+    const fence = tukeyFence(
+      [...medianByStore.values()],
+      config.iqrMultiple,
+      config.minFenceHalfWidth
+    );
     if (fence) {
       const kept: Trade[] = [];
       for (const t of surviving) {

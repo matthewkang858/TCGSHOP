@@ -3,6 +3,7 @@ import {
   aggregateTrades,
   DEFAULT_CONFIG,
   median,
+  tukeyFence,
   quantile,
   type Trade,
 } from "./aggregate";
@@ -280,6 +281,64 @@ describe("aggregateTrades — manipulation", () => {
     expect(o.excluded).toEqual([]);
     expect(o.vwap).toBe(30);
     expect(o.storeCount).toBe(4);
+  });
+});
+
+describe("tukeyFence — the width floor", () => {
+  it("widens a razor-thin fence to the floor", () => {
+    // Four stores agreeing within a few percent give an IQR of a few percent,
+    // and fences that would reject anyone slightly different.
+    const tight = tukeyFence([29.5, 30, 30.5, 31], 1.5);
+    expect(tight!.low).toBeCloseTo(28.75, 6); // a 4% discount is "an outlier"
+    const floored = tukeyFence([29.5, 30, 30.5, 31], 1.5, 0.25);
+    expect(floored!.low).toBeCloseTo(22.6875, 6);
+    expect(floored!.high).toBeCloseTo(37.8125, 6);
+  });
+
+  it("never narrows a fence that is already wide", () => {
+    const wide = tukeyFence([10, 20, 30, 40], 1.5);
+    const floored = tukeyFence([10, 20, 30, 40], 1.5, 0.25);
+    expect(floored).toEqual(wide);
+  });
+});
+
+describe("aggregateTrades — honest disagreement", () => {
+  it("keeps a shop that is legitimately cheaper than everyone else", () => {
+    // A discount shop 15% under the market is a competitor, not an error.
+    // Without the fence floor, tight agreement among the others makes the
+    // fences narrower than its discount and it gets thrown out - which would
+    // make the tape describe the consensus rather than the market.
+    const o = aggregateTrades(
+      [
+        trade("a", 30),
+        trade("b", 30.5),
+        trade("c", 29.5),
+        trade("d", 31),
+        trade("discount", 25.5),
+      ],
+      30
+    );
+    expect(o.excluded).toEqual([]);
+    expect(o.storeCount).toBe(5);
+    expect(o.low).toBe(25.5);
+  });
+
+  it("still catches the adversary in the same bucket", () => {
+    const o = aggregateTrades(
+      [
+        trade("a", 30),
+        trade("b", 30.5),
+        trade("c", 29.5),
+        trade("d", 31),
+        trade("discount", 25.5),
+        trade("evil", 75),
+      ],
+      30
+    );
+    expect(o.excluded).toHaveLength(1);
+    expect(o.excluded[0].unitPrice).toBe(75);
+    expect(o.storeCount).toBe(5);
+    expect(o.low).toBe(25.5);
   });
 });
 
