@@ -17,6 +17,7 @@ const settingsSchema = z.object({
     .startsWith("https://discord.com/api/webhooks/")
     .or(z.literal("")),
   emailAlerts: z.boolean(),
+  dashboardAnalytics: z.boolean(),
   stalenessHours: z.coerce.number().int().min(1).max(24 * 14),
   defaultRounding: z.enum(["psychological", "quarter", "dollar", "cents"]),
 });
@@ -30,6 +31,7 @@ export async function updateStoreSettingsAction(formData: FormData) {
     name: formData.get("name"),
     discordWebhook: formData.get("discordWebhook") ?? "",
     emailAlerts: formData.get("emailAlerts") === "on",
+    dashboardAnalytics: formData.get("dashboardAnalytics") === "on",
     stalenessHours: formData.get("stalenessHours") || 24,
     defaultRounding: formData.get("defaultRounding") ?? "psychological",
   });
@@ -43,6 +45,7 @@ export async function updateStoreSettingsAction(formData: FormData) {
         ...store.settings,
         discord_webhook_url: parsed.discordWebhook || undefined,
         email_alerts: parsed.emailAlerts,
+        dashboard_analytics: parsed.dashboardAnalytics,
         snapshot_staleness_hours: parsed.stalenessHours,
         default_rounding: parsed.defaultRounding,
       },

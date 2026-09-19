@@ -32,7 +32,8 @@ export function SectionCard({
       {title ? (
         <div className="flex h-12 items-center justify-between gap-3 border-b border-border/60 px-4">
           <div className="flex min-w-0 items-baseline gap-2">
-            <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+            {/* The title never wraps or shrinks; a long meta truncates instead. */}
+            <h2 className="shrink-0 whitespace-nowrap text-sm font-semibold text-foreground">{title}</h2>
             {meta ? (
               <span className="truncate text-xs tabular-nums text-muted-foreground">{meta}</span>
             ) : null}

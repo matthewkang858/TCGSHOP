@@ -133,6 +133,8 @@ export type StoreSettings = {
   sales_stats_min_price?: number;
   /** email alert delivery on/off */
   email_alerts?: boolean;
+  /** sales / profit / value charts on the dashboard (default on) */
+  dashboard_analytics?: boolean;
 };
 
 export const stores = pgTable("stores", {

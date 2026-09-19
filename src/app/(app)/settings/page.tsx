@@ -97,6 +97,14 @@ export default async function SettingsPage() {
                 />
                 <span className="text-sm font-medium">Email alerts to store owners</span>
               </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  name="dashboardAnalytics"
+                  defaultChecked={store.settings.dashboard_analytics ?? true}
+                />
+                <span className="text-sm font-medium">Show analytics charts on the dashboard</span>
+              </label>
               <Button type="submit" disabled={!isOwner}>
                 Save settings
               </Button>

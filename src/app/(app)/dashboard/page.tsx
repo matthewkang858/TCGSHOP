@@ -16,8 +16,9 @@ import { alertEvents, alerts, expansions, products, repriceRuns, transactions } 
 import { requireStore } from "@/lib/tenancy";
 import { EmptyState, PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
-import { InventoryValueChart, type ValuePoint } from "@/components/inventory-value-chart";
+import type { ValuePoint } from "@/components/inventory-value-chart";
 import { cn, formatDateTime, formatMoney, formatPct } from "@/lib/utils";
+import { DashboardAnalytics } from "./analytics";
 import { StickerRow } from "./sticker-row";
 import {
   EmptyRows,
@@ -84,10 +85,12 @@ export default async function DashboardPage() {
   `).then((r) => r.rows);
 
   const hasInventory = (stats?.lines ?? 0) > 0;
+  // Per-store switch for the charts block; on unless the owner turned it off.
+  const showAnalytics = ctx.settings.dashboard_analytics ?? true;
 
   // inventory value over time (30 days), split singles vs sealed, priced off
   // local snapshots at each day's close with current quantities
-  const valueRows = hasInventory
+  const valueRows = hasInventory && showAnalytics
     ? await db.execute<{ d: string; ptype: string; value: string }>(sql`
         with inv as (
           select i.product_id, sum(i.quantity) qty,
@@ -376,6 +379,10 @@ export default async function DashboardPage() {
             )}
           </SectionCard>
 
+          {showAnalytics ? (
+            <DashboardAnalytics storeId={storeId} valueSeries={valueSeries} />
+          ) : null}
+
           <div className="grid gap-4 lg:grid-cols-2">
             <SectionCard
               title="Counter activity"
@@ -530,10 +537,6 @@ export default async function DashboardPage() {
                 );
               })
             )}
-          </SectionCard>
-
-          <SectionCard title="Inventory value" meta="last 30 days" bodyClassName="p-4">
-            <InventoryValueChart data={valueSeries} />
           </SectionCard>
         </div>
       )}
