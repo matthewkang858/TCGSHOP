@@ -81,9 +81,11 @@ export function InventoryValueChart({ data }: { data: ValuePoint[] }) {
             verticalAlign="top"
             align="right"
             iconSize={8}
+            // Recharts colors legend text with the series color; the swatch
+            // already carries identity, so text stays in the text token.
+            formatter={(value) => <span style={{ color: "var(--muted-foreground)" }}>{value}</span>}
             wrapperStyle={{
               fontSize: 12,
-              color: "var(--muted-foreground)",
               paddingBottom: 8,
             }}
           />

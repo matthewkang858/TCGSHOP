@@ -695,6 +695,25 @@ export async function seedDemoData({ closePool = false } = {}) {
     await db.insert(transactions).values(tapeRows.slice(i, i + 500));
   }
 
+  // Seeded sales are inserted in bulk rather than through recordTransaction,
+  // so snapshot the cost the same way it would have: the matching line's
+  // cost basis at the time of sale. Only lines that exist and carry a cost
+  // qualify; the rest stay uncosted, which is exactly what the profit chart
+  // must report for them.
+  await db.execute(sql`
+    update transactions t
+       set unit_cost = i.cost_basis
+      from inventory_items i
+     where t.side = 'sale'
+       and t.unit_cost is null
+       and i.store_id = t.store_id
+       and i.product_id = t.product_id
+       and i.condition = t.condition
+       and i.printing is not distinct from t.printing
+       and i.language = t.language
+       and i.cost_basis is not null
+  `);
+
   const tapeByStore = new Map<string, number>();
   for (const row of tapeRows) {
     tapeByStore.set(row.storeId, (tapeByStore.get(row.storeId) ?? 0) + 1);

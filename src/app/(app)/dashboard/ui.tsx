@@ -28,7 +28,10 @@ export function SectionCard({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-lg border border-border/60 bg-card shadow-none">
+    // min-w-0: a grid item defaults to min-width:auto, so a header that refuses
+    // to wrap would size the whole card to its content and push the page past
+    // the viewport on a phone. The card must shrink and let its meta truncate.
+    <section className="min-w-0 rounded-lg border border-border/60 bg-card shadow-none">
       {title ? (
         <div className="flex h-12 items-center justify-between gap-3 border-b border-border/60 px-4">
           <div className="flex min-w-0 items-baseline gap-2">

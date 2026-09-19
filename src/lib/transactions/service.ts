@@ -44,6 +44,30 @@ export async function recordTransaction(
   input: RecordTransactionInput
 ): Promise<{ transactionId: string; inventoryAdjusted: boolean }> {
   return db.transaction(async (tx) => {
+    // Snapshot the line's cost at the moment of sale. Profit history has to
+    // stay fixed: a restock next week at a new price must not rewrite what
+    // this sale earned. Read before the inventory update below, which is
+    // ordered after the insert but can never change cost on a sale anyway.
+    let unitCost: string | null = null;
+    if (input.side === "sale") {
+      const [line] = await tx
+        .select({ costBasis: inventoryItems.costBasis })
+        .from(inventoryItems)
+        .where(
+          and(
+            eq(inventoryItems.storeId, storeId),
+            eq(inventoryItems.productId, input.productId),
+            eq(inventoryItems.condition, input.condition),
+            input.printing === null
+              ? sql`${inventoryItems.printing} is null`
+              : eq(inventoryItems.printing, input.printing),
+            eq(inventoryItems.language, input.language)
+          )
+        )
+        .limit(1);
+      unitCost = line?.costBasis ?? null;
+    }
+
     const [row] = await tx
       .insert(transactions)
       .values({
@@ -55,6 +79,7 @@ export async function recordTransaction(
         language: input.language,
         quantity: input.quantity,
         unitPrice: input.unitPrice.toFixed(2),
+        unitCost,
         occurredAt: input.occurredAt ?? new Date(),
         source: input.source ?? "manual",
         // A hand-entered method is the store's own claim about the tender.

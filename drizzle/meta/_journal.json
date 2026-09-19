@@ -29,6 +29,13 @@
       "when": 1789748054026,
       "tag": "0003_tape_and_payment_attestation",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789830506009,
+      "tag": "0004_transaction_unit_cost",
+      "breakpoints": true
     }
   ]
 }

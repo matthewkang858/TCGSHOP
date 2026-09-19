@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { and, asc, count, desc, eq, ilike, sql, sum, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, isNull, sql, sum, type SQL } from "drizzle-orm";
 import { Boxes, FileDown, Search, Upload } from "lucide-react";
 import { z } from "zod";
 import { db } from "@/db";
@@ -26,6 +26,8 @@ const searchSchema = z.object({
   type: z.enum(["single", "sealed", "other"]).optional(),
   condition: z.string().max(40).optional(),
   tag: z.string().max(60).optional(),
+  /** "missing": only lines with no cost basis - linked from the profit chart */
+  cost: z.enum(["missing"]).optional(),
   sort: z.enum(["name", "quantity", "price", "value", "updated"]).default("name"),
   dir: z.enum(["asc", "desc"]).default("asc"),
   page: z.coerce.number().int().min(1).default(1),
@@ -50,6 +52,7 @@ export default async function InventoryPage({
   if (params.type) filters.push(eq(productType, params.type));
   if (params.condition) filters.push(eq(inventoryItems.condition, params.condition));
   if (params.tag) filters.push(sql`${params.tag} = any(${inventoryItems.tags})`);
+  if (params.cost === "missing") filters.push(isNull(inventoryItems.costBasis));
   const where = and(...filters);
 
   const value = sql<string>`coalesce(${inventoryItems.currentPrice}, 0) * ${inventoryItems.quantity}`;
@@ -100,7 +103,8 @@ export default async function InventoryPage({
     .from(inventoryItems)
     .where(eq(inventoryItems.storeId, ctx.storeId));
 
-  const hasAny = total > 0 || params.q || params.type || params.condition || params.tag;
+  const hasAny =
+    total > 0 || params.q || params.type || params.condition || params.tag || params.cost;
 
   const items: InventoryRowItem[] = rows.map((r) => ({
     id: r.id,
@@ -232,6 +236,15 @@ function FilterBar({
   return (
     <form method="get" className="mb-4 flex flex-wrap items-center gap-2">
       {params.tag ? <input type="hidden" name="tag" value={params.tag} /> : null}
+      {params.cost ? <input type="hidden" name="cost" value={params.cost} /> : null}
+      {params.cost === "missing" ? (
+        <span className="flex w-full items-center gap-2 text-xs text-muted-foreground">
+          Showing only lines with no cost recorded.
+          <Link href="/inventory" className="font-medium text-primary hover:underline">
+            Show all
+          </Link>
+        </span>
+      ) : null}
       <div className="flex w-full min-w-0 items-center gap-2 md:w-auto">
         <Input
           name="q"
@@ -327,6 +340,7 @@ function Pagination({
     if (params.type) sp.set("type", params.type);
     if (params.condition) sp.set("condition", params.condition);
     if (params.tag) sp.set("tag", params.tag);
+    if (params.cost) sp.set("cost", params.cost);
     sp.set("sort", params.sort);
     sp.set("dir", params.dir);
     sp.set("page", String(p));

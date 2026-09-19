@@ -11,6 +11,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { niceTicks } from "@/lib/analytics/ticks";
 
 export type DailyBarPoint = {
   /** yyyy-mm-dd */
@@ -54,7 +55,9 @@ export function DailyBarChart({
       </div>
     );
   }
-  const hasNegative = data.some((d) => d.value < 0);
+  const values = data.map((d) => d.value);
+  const ticks = niceTicks(Math.min(...values), Math.max(...values));
+  const hasNegative = ticks[0] < 0;
 
   return (
     <div className="h-48 min-w-0 md:h-56">
@@ -69,7 +72,15 @@ export function DailyBarChart({
             axisLine={false}
             minTickGap={20}
           />
-          <YAxis tick={tick} tickFormatter={fmtTick} tickLine={false} axisLine={false} width={44} />
+          <YAxis
+            tick={tick}
+            ticks={ticks}
+            domain={[ticks[0], ticks[ticks.length - 1]]}
+            tickFormatter={fmtTick}
+            tickLine={false}
+            axisLine={false}
+            width={44}
+          />
           {hasNegative ? <ReferenceLine y={0} stroke="var(--border-strong)" /> : null}
           <Tooltip
             cursor={{ fill: "var(--muted)", fillOpacity: 0.4 }}

@@ -10,16 +10,18 @@ export type DashboardAnalytics = {
   last7: WindowTotals;
   prior7: WindowTotals;
   revenueDeltaPct: number | null;
-  profitDeltaPct: number | null;
-  /** inventory lines with no cost basis - the reason profit can be undercounted */
-  uncostedLines: number;
 };
 
 /**
  * Daily sales and gross profit for one store, store-scoped at the query.
  *
- * Profit is only ever computed where the inventory line the sale came from
- * carries a cost basis. A sale with no cost is counted in revenue and units but
+ * Profit uses the cost recorded on the sale itself (`unit_cost`, snapshotted
+ * from the inventory line at the moment of sale), so a later restock or cost
+ * edit cannot rewrite history. Rows recorded before that column existed fall
+ * back to the line's current cost basis, which is the best information there
+ * is for them.
+ *
+ * A sale with no cost either way is counted in revenue and units but
  * contributes nothing to profit and is reported as "uncosted" rather than
  * treated as pure margin - overstating profit is worse than a gap the owner
  * can see and fix by recording what they paid.
@@ -43,7 +45,8 @@ export async function loadDashboardAnalytics(storeId: string): Promise<Dashboard
         )::date d
       ),
       sales as (
-        select t.occurred_at::date d, t.quantity, t.unit_price, i.cost_basis
+        select t.occurred_at::date d, t.quantity, t.unit_price,
+               coalesce(t.unit_cost, i.cost_basis) as cost
         from transactions t
         left join inventory_items i
           on i.store_id = t.store_id
@@ -59,11 +62,11 @@ export async function loadDashboardAnalytics(storeId: string): Promise<Dashboard
              coalesce(sum(s.quantity * s.unit_price), 0) as revenue,
              coalesce(sum(s.quantity), 0)::int as units,
              count(s.quantity)::int as sales,
-             coalesce(sum((s.unit_price - s.cost_basis) * s.quantity)
-               filter (where s.cost_basis is not null), 0) as profit,
+             coalesce(sum((s.unit_price - s.cost) * s.quantity)
+               filter (where s.cost is not null), 0) as profit,
              coalesce(sum(s.quantity * s.unit_price)
-               filter (where s.cost_basis is not null), 0) as costed_revenue,
-             count(s.quantity) filter (where s.cost_basis is null)::int as uncosted_sales
+               filter (where s.cost is not null), 0) as costed_revenue,
+             count(s.quantity) filter (where s.cost is null)::int as uncosted_sales
       from days
       left join sales s on s.d = days.d
       group by days.d
@@ -81,14 +84,6 @@ export async function loadDashboardAnalytics(storeId: string): Promise<Dashboard
     uncostedSales: r.uncosted_sales,
   }));
 
-  const [{ uncosted }] = await db
-    .execute<{ uncosted: number }>(sql`
-      select count(*)::int as uncosted
-      from inventory_items
-      where store_id = ${storeId} and quantity > 0 and cost_basis is null
-    `)
-    .then((r) => r.rows);
-
   const { last7, prior7 } = splitWeeks(days);
   const last = sumWindow(last7);
   const prior = sumWindow(prior7);
@@ -98,7 +93,5 @@ export async function loadDashboardAnalytics(storeId: string): Promise<Dashboard
     last7: last,
     prior7: prior,
     revenueDeltaPct: pctDelta(last.revenue, prior.revenue),
-    profitDeltaPct: pctDelta(last.profit, prior.profit),
-    uncostedLines: uncosted,
   };
 }

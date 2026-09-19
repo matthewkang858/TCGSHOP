@@ -499,6 +499,13 @@ export const transactions = pgTable(
     quantity: integer("quantity").notNull().default(1),
     /** realized price per unit, in dollars */
     unitPrice: numeric("unit_price", { precision: 12, scale: 2 }).notNull(),
+    /**
+     * The inventory line's cost basis at the moment of a sale, per unit. Null
+     * when the line had no cost (or no line existed). Snapshotted so profit
+     * history is fixed at the time of sale: a later restock at a new price
+     * must not rewrite last week's profit.
+     */
+    unitCost: numeric("unit_cost", { precision: 12, scale: 2 }),
     occurredAt: timestamp("occurred_at").notNull().defaultNow(),
     /** manual (counter entry) | seed; future: scan, nightly_close, pos_sync */
     source: text("source").notNull().default("manual"),

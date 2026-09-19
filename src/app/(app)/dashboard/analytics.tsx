@@ -29,53 +29,60 @@ export async function DashboardAnalytics({
   const profitSeries: DailyBarPoint[] = a.days.map((d) => {
     const margin = d.costedRevenue > 0 ? (d.profit / d.costedRevenue) * 100 : null;
     const detail: string[] = [];
-    if (margin !== null) detail.push(`${formatPct(margin).replace("+", "")} margin`);
-    if (d.uncostedSales > 0) detail.push(`${d.uncostedSales} uncosted ${d.uncostedSales === 1 ? "sale" : "sales"} excluded`);
+    if (margin !== null) detail.push(`${formatPct(margin).replace("+", "")} margin on costed sales`);
+    if (d.uncostedSales > 0) {
+      detail.push(`${d.uncostedSales} of ${d.sales} ${d.sales === 1 ? "sale" : "sales"} uncosted`);
+    }
     return { date: d.date, value: d.profit, detail };
   });
 
-  // Whole dollars: this is a card subtitle, not a ledger, and it has to fit
-  // beside the title on a phone.
-  const whole = (n: number) =>
-    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
-  const withDelta = (total: number, delta: number | null) =>
-    delta === null
-      ? `${whole(total)} last 7d`
-      : `${whole(total)} last 7d · ${formatPct(delta)} vs prior`;
+  const { last7 } = a;
+  const costedSales = last7.sales - last7.uncostedSales;
 
   return (
     <>
       <div className="grid gap-4 lg:grid-cols-2">
-        <SectionCard
-          title="Sales by day"
-          meta={withDelta(a.last7.revenue, a.revenueDeltaPct)}
-          bodyClassName="p-4"
-        >
+        <SectionCard title="Sales by day" meta="last 14 days" bodyClassName="p-4">
+          <Summary
+            value={whole(last7.revenue)}
+            parts={[
+              "last 7 days",
+              a.revenueDeltaPct !== null ? `${formatPct(a.revenueDeltaPct)} vs the week before` : null,
+            ]}
+          />
           <DailyBarChart
             data={revenueSeries}
             emptyMessage="No sales in the last two weeks. Record a sale and it charts here."
           />
         </SectionCard>
 
-        <SectionCard
-          title="Profit by day"
-          meta={
-            a.last7.marginPct === null
-              ? withDelta(a.last7.profit, a.profitDeltaPct)
-              : `${withDelta(a.last7.profit, a.profitDeltaPct)} · ${a.last7.marginPct.toFixed(0)}% margin`
-          }
-          bodyClassName="p-4"
-        >
+        <SectionCard title="Profit by day" meta="last 14 days" bodyClassName="p-4">
+          {/*
+            No week-over-week delta here on purpose: profit only covers sales
+            with a cost on file, and two weeks rarely have the same coverage,
+            so the comparison would be between different slices of the store.
+          */}
+          <Summary
+            value={whole(last7.profit)}
+            parts={[
+              "last 7 days",
+              last7.marginPct !== null ? `${last7.marginPct.toFixed(0)}% margin on costed sales` : null,
+            ]}
+          />
           <DailyBarChart
             data={profitSeries}
             emptyMessage="Profit charts once sales come from lines with a cost recorded."
           />
-          {a.uncostedLines > 0 ? (
+          {last7.uncostedSales > 0 ? (
             <p className="mt-2 text-xs text-muted-foreground">
-              {a.uncostedLines} {a.uncostedLines === 1 ? "line has" : "lines have"} no cost
-              recorded, so their sales count toward revenue but not profit.{" "}
-              <Link href="/inventory" className="font-medium text-primary hover:underline">
-                Add costs
+              {last7.uncostedSales} of {last7.sales} sales this week had no cost on file, so they
+              count toward revenue but not profit
+              {costedSales === 0 ? " - nothing above is costed yet" : ""}.{" "}
+              <Link
+                href="/inventory?cost=missing"
+                className="font-medium text-primary hover:underline"
+              >
+                Lines missing a cost →
               </Link>
             </p>
           ) : null}
@@ -86,5 +93,23 @@ export async function DashboardAnalytics({
         <InventoryValueChart data={valueSeries} />
       </SectionCard>
     </>
+  );
+}
+
+// Whole dollars: a headline, not a ledger.
+const whole = (n: number) =>
+  n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+
+/**
+ * The card's headline number and its qualifiers, in the body rather than the
+ * 48px header so they can wrap on a phone instead of truncating the one part
+ * (the margin, the caveat) the owner most needs to read.
+ */
+function Summary({ value, parts }: { value: string; parts: (string | null)[] }) {
+  return (
+    <p className="mb-3 text-sm leading-snug">
+      <span className="text-xl font-semibold tracking-[-0.02em] text-foreground">{value}</span>{" "}
+      <span className="text-muted-foreground">{parts.filter(Boolean).join(" · ")}</span>
+    </p>
   );
 }
